@@ -1,6 +1,7 @@
+
 #!/usr/bin/env bash
 # 安装 ChromaDB 记忆插件
-PROJECT_DIR="${HOME}/.MokAgi"
+PROJECT_DIR=~/.MokAgi
 PLUGIN_DIR="${PROJECT_DIR}/plugins"
 mkdir -p "${PLUGIN_DIR}"
 
