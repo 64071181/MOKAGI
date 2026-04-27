@@ -1,11 +1,11 @@
 # 自製工具
 
 
-toolName
-  |
-   --- README.md(說明、一鍵安裝)
-  |
-   --- toolName.py(說明、主程式)
+    toolName
+      |
+       --- README.md(說明、一鍵安裝)
+      |
+       --- toolName.py(說明、主程式)
 
 ===
 
