@@ -146,7 +146,9 @@ if [ -z "${ALLOWED_USERS}" ]; then
     echo "ALLOWED_USERS=${ALLOWED_USERS}" >> "${ENV_FILE}"
 fi
 
-
+if [ -z "${AGENT_NAME}" ]; then
+    AGENT_NAME="ai助手"
+fi
 
 # ================== 模型固定臺詞 ===================
 if [ -z "${MOK_start_msg}" ]; then
@@ -573,9 +575,9 @@ if ! command -v pm2 &> /dev/null; then
     sudo apt-get install -y nodejs
     sudo npm install -g pm2
 fi
-pm2 delete ${MokAgiName} 2>/dev/null || true
+pm2 delete ${MokAgiName}_${AGENT_NAME} 2>/dev/null || true
 pm2 start "${BOT_SCRIPT}" \
-    --name ${MokAgiName} \
+    --name ${MokAgiName}_${AGENT_NAME} \
     --interpreter python3 \
     --cwd "${PROJECT_DIR}" \
     --env TG_TOKEN="${TG_TOKEN}" \
@@ -601,11 +603,11 @@ pm2 save
 #echo -e "\n${YELLOW}請複製並執行上方的 'sudo env PATH=...' 指令以啟用 PM2 開機自啟。${NC}"
 
 echo -e "${GREEN}=========================================="
-echo -e " 💖 [7/7] MokAgi 部署完成！"
+echo -e " 💖 [7/7] ${MokAgiName}_${AGENT_NAME} 部署完成！"
 echo -e "=========================================="
 echo ""
-echo -e " MokAgi 已啟動！ 檢視日誌: "
-echo -e "    pm2 logs ${MokAgiName} "
+echo -e " ${MokAgiName}_${AGENT_NAME} 已啟動！ 檢視日誌: "
+echo -e "    pm2 logs ${MokAgiName}_${AGENT_NAME} "
 echo ""
 echo -e " 💖 模型列表:"
 echo -e "      ollama list "
