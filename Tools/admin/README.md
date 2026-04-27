@@ -13,4 +13,4 @@
     curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/admin/admin.py -o "${PLUGIN_DIR}/admin.py"
     
     # 加載
-    pm2 restart MokAgi && echo "✅ 已安装并重启成功。"
+    echo "✅ 記憶工具已安裝！請在 Telegram 發送 /reload 啟用。"
