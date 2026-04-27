@@ -6,7 +6,7 @@
     #!/usr/bin/env bash
     # 安裝 ChromaDB 記憶工具
     PROJECT_DIR=~/.MokAgi
-    PLUGIN_DIR="${PROJECT_DIR}/plugins"
+    PLUGIN_DIR="${PROJECT_DIR}/tools"
     mkdir -p "${PLUGIN_DIR}"
     
     # 下載工具
@@ -15,5 +15,5 @@
     # 安裝依賴
     pip install chromadb -q
     
-    # 熱加載
-    echo "✅ 記憶工具已安裝！請在 Telegram 發送 /reload 啟用。"
+    # 加載
+    pm2 restart MokAgi && echo "✅ 已安装并重启成功。"
