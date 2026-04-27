@@ -3,15 +3,19 @@ PLUGIN_INFO = {
     "command": "/memory",
     "description": "長期記憶 (remember, recall, list, forgetall)",
     "handler": "handle_memory",
-    "updata":"202604272035"
+    "updata":"202604272310"
 }
 
-import logging
+import logging, os
 import chromadb
 from chromadb.config import Settings
+from telegram import ReplyKeyboardMarkup, KeyboardButton
+
+# 明确指定数据存储路径
+CHROMA_PATH = os.path.join(os.path.expanduser("~"), ".MokAgi", "chroma_data")
 
 try:
-    _client = chromadb.Client(Settings(anonymized_telemetry=False))
+    _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
     _collection = _client.get_or_create_collection(name="mokagi_memory")
     MISSING_DEPS = False
 except ImportError:
@@ -21,23 +25,25 @@ except ImportError:
 def _col():
     global _client, _collection
     if _client is None:
-        _client = chromadb.Client(Settings(anonymized_telemetry=False))
+        _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
         _collection = _client.get_or_create_collection(name="mokagi_memory")
     return _collection
 
-def handle_memory(args: str, chat_id: str = None) -> str:
+def handle_memory(args: str, chat_id: str = None):
     if MISSING_DEPS:
         return "❌ 記憶插件缺少依賴，請在終端執行：\npip install chromadb"
     if chat_id is None:
-        return "❌ 無法識別使用者。請在私聊中使用。"
+        return "❌ 無法識別使用者。"
 
     args = args.strip()
     if not args:
-        return "📖 長期記憶使用說明：\n\n" \
-               "/memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n" \
-               "/memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼\n\n" \
-               "/memory list\n\n" \
-               "/memory forgetall"
+        # 弹出快捷键盘
+        keyboard = ReplyKeyboardMarkup([
+            [KeyboardButton("/memory remember "), KeyboardButton("/memory recall ")],
+            [KeyboardButton("/memory list"), KeyboardButton("/memory forgetall")]
+        ], resize_keyboard=True, one_time_keyboard=True)
+        help_text = "📖 長期記憶\n使用下方按鈕快速操作，或直接輸入命令："
+        return (help_text, keyboard)
 
     parts = args.split(maxsplit=1)
     subcmd = parts[0].lower()
@@ -48,7 +54,11 @@ def handle_memory(args: str, chat_id: str = None) -> str:
 
         if subcmd == "remember":
             if not content:
-                return "用法: /memory remember <內容>"
+                return "📖 長期記憶使用說明：\n\n" \
+               "/memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n" \
+               "/memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼\n\n" \
+               "/memory list\n\n" \
+               "/memory forgetall"
             col.add(
                 documents=[content],
                 metadatas=[{"chat_id": chat_id}],
