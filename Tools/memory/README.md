@@ -5,7 +5,7 @@ PLUGIN_DIR="${PROJECT_DIR}/plugins"
 mkdir -p "${PLUGIN_DIR}"
 
 # 下载插件
-curl -sL [https://raw.githubusercontent.com/64071181/MokAgi/Tools/main/memory/memory.py](https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/memory/memory.py) -o "${PLUGIN_DIR}/memory.py"
+curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/memory/memory.py -o "${PLUGIN_DIR}/memory.py"
 
 # 安装依赖
 pip install chromadb -q
