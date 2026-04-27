@@ -1,15 +1,15 @@
+
 PLUGIN_INFO = {
     "command": "/memory",
     "description": "長期記憶 (remember, recall, list, forgetall)",
     "handler": "handle_memory",
-    "updata":"202604271317"
+    "updata":"202604272035"
 }
 
 import logging
 import chromadb
 from chromadb.config import Settings
 
-# ===== 依赖自检 =====
 try:
     _client = chromadb.Client(Settings(anonymized_telemetry=False))
     _collection = _client.get_or_create_collection(name="mokagi_memory")
@@ -19,7 +19,6 @@ except ImportError:
     _collection = None
 
 def _col():
-    """获取或创建 collection（每次调用时重新获取，避免意外丢失）"""
     global _client, _collection
     if _client is None:
         _client = chromadb.Client(Settings(anonymized_telemetry=False))
@@ -29,25 +28,17 @@ def _col():
 def handle_memory(args: str, chat_id: str = None) -> str:
     if MISSING_DEPS:
         return "❌ 記憶插件缺少依賴，請在終端執行：\npip install chromadb"
-
     if chat_id is None:
         return "❌ 無法識別使用者。請在私聊中使用。"
 
     args = args.strip()
     if not args:
-    return "📖 長期記憶使用說明：\n\n" \
-           "/memory remember <內容>\n" \
-           "  例：/memory remember 我喜欢喝咖啡\n" \
-           "  → 存储一条记忆\n\n" \
-           "/memory recall <關鍵詞>\n" \
-           "  例：/memory recall 喜欢喝什么\n" \
-           "  → 回忆相关记忆\n\n" \
-           "/memory list\n" \
-           "  → 查看最近记忆\n\n" \
-           "/memory forgetall\n" \
-           "  → 清空全部记忆"
+        return "📖 長期記憶使用說明：\n\n" \
+               "/memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n" \
+               "/memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼\n\n" \
+               "/memory list\n\n" \
+               "/memory forgetall"
 
-    # ---- 分割子命令 ----
     parts = args.split(maxsplit=1)
     subcmd = parts[0].lower()
     content = parts[1] if len(parts) > 1 else ""
@@ -95,7 +86,6 @@ def handle_memory(args: str, chat_id: str = None) -> str:
             return reply
 
         elif subcmd == "forgetall":
-            # 清空当前用户的所有记忆
             col.delete(where={"chat_id": chat_id})
             return "🗑 記憶已清空。"
 
