@@ -109,9 +109,13 @@ ENV_TEMPLATE
     fi
     echo -e "${YELLOW}==========================================${NC}"
     echo -e "請先編輯 ${ENV_FILE}，填入你的 Telegram Bot Token 和 Chat ID。"
-    echo -e "編輯完成後，Ctrl+X，按 Y 儲存，再按 Enter ，再執行腳本:"
-    echo -e "       bash ~/MokAgi0.sh"
     echo -e "       nano ${ENV_FILE}"
+    echo -e ""
+    echo -e "編輯完成後，Ctrl+X，按 Y 儲存，再按 Enter "
+    echo -e ""
+    echo -e "，再執行腳本:"
+    echo -e "       bash ~/MokAgi0.sh"
+    echo -e ""
     echo -e "==========================================${NC}"
     exit 0
 fi
