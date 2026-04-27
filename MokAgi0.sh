@@ -90,18 +90,19 @@ if [ ! -f "${ENV_FILE}" ]; then
 
 TG_TOKEN=你的Bot_Token
 ADMIN_CHAT_ID=你的Telegram_Chat_ID
-ALLOWED_USERS=你的ID,另一個ID（逗號分隔，留空則所有人可用）
+ALLOWED_USERS=你的ID,受權使用者ID1,受權使用者ID2（逗號分隔，留空則所有人可用）
 
-MOK_start_msg=MokAgi 已成功部署並上線！
+MOK_start_msg=🎉 MokAgi 已成功部署並24小時在線！
 MOK_welcome_msg=你好！我是有記憶的 AI 助手。
 MOK_unAllowed_msg=您未獲得使用權限。
 ENV_TEMPLATE
     fi
     echo -e "${YELLOW}==========================================${NC}"
-    echo -e "${YELLOW}  請先編輯 ${ENV_FILE}，填入你的 Telegram Bot Token 和 Chat ID。${NC}"
-    echo -e "${YELLOW}  編輯完成後，重新執行腳本即可開始部署。${NC}"
-    echo -e "${YELLOW}  命令：nano ${ENV_FILE}${NC}"
-    echo -e "${YELLOW}==========================================${NC}"
+    echo -e "請先編輯 ${ENV_FILE}，填入你的 Telegram Bot Token 和 Chat ID。"
+    echo -e "編輯完成後，Ctrl+X，按 Y 儲存，再按 Enter ，再執行腳本:"
+    echo -e "       bash ~/MokAgi0.sh"
+    echo -e "       nano ${ENV_FILE}"
+    echo -e "==========================================${NC}"
     exit 0
 fi
 
