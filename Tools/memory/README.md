@@ -16,4 +16,4 @@
     pip install chromadb -q
     
     # 加載
-    pm2 restart MokAgi && echo "✅ 已安装并重启成功。"
+    echo "✅ 記憶工具已安裝！請在 Telegram 發送 /reload 啟用。"
