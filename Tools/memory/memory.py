@@ -1,7 +1,8 @@
 PLUGIN_INFO = {
     "command": "/memory",
     "description": "長期記憶 (remember, recall, list, forgetall)",
-    "handler": "handle_memory"
+    "handler": "handle_memory",
+    "updata":"202604271317"
 }
 
 import logging
