@@ -75,20 +75,46 @@ echo -e "${GREEN}==========================================${NC}"
 # ---- 建立專案根目錄 ----
 mkdir -p "${PROJECT_DIR}"
 cd "${PROJECT_DIR}"
-# ---- 讀取 .env ----
-if [ -f "${ENV_FILE}" ]; then
-    # 先移除文件中所有的 \r 字符（Windows 換行符），避免汙染 Token
-    tr -d '\r' < "${ENV_FILE}" > "${ENV_FILE}.clean"
-    mv "${ENV_FILE}.clean" "${ENV_FILE}"
-    export $(grep -v '^#' "${ENV_FILE}" | xargs) 2>/dev/null
+
+
+# ---- 檢查並準備 .env ----
+if [ ! -f "${ENV_FILE}" ]; then
+    # .env 不存在，下載模板
+    echo -e "${YELLOW}未找到 .env 配置文件，正在為你下載模板...${NC}"
+    curl -sL "https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/env_template" -o "${ENV_FILE}"
+    if [ $? -ne 0 ]; then
+        # 如果下載失敗，手動生成一個最小模板
+        cat > "${ENV_FILE}" << 'ENV_TEMPLATE'
+# MokAgi 環境變量配置（請填寫你的真實信息）
+# 注意：等號前後不要加空格
+
+TG_TOKEN=你的Bot_Token
+ADMIN_CHAT_ID=你的Telegram_Chat_ID
+ALLOWED_USERS=你的ID,另一個ID（逗號分隔，留空則所有人可用）
+
+MOK_start_msg=MokAgi 已成功部署並上線！
+MOK_welcome_msg=你好！我是有記憶的 AI 助手。
+MOK_unAllowed_msg=您未獲得使用權限。
+ENV_TEMPLATE
+    fi
+    echo -e "${YELLOW}==========================================${NC}"
+    echo -e "${YELLOW}  請先編輯 ${ENV_FILE}，填入你的 Telegram Bot Token 和 Chat ID。${NC}"
+    echo -e "${YELLOW}  編輯完成後，重新執行腳本即可開始部署。${NC}"
+    echo -e "${YELLOW}  命令：nano ${ENV_FILE}${NC}"
+    echo -e "${YELLOW}==========================================${NC}"
+    exit 0
 fi
-# 如果 .env 不存在或沒有 TG_TOKEN，詢問使用者
-if [ -z "${TG_TOKEN}" ]; then
-    echo -e "${YELLOW}未找到 TG_TOKEN，請輸入:${NC}"
-    read -p "Telegram Bot Token: " TG_TOKEN
-    # 建立 .env
-    echo "TG_TOKEN=${TG_TOKEN}" > "${ENV_FILE}"
-    echo -e "${GREEN}✅ 已將 Token 寫入 ${ENV_FILE}${NC}"
+
+# 清理 \r 字符並載入環境變量
+tr -d '\r' < "${ENV_FILE}" > "${ENV_FILE}.clean"
+mv "${ENV_FILE}.clean" "${ENV_FILE}"
+export $(grep -v '^#' "${ENV_FILE}" | xargs) 2>/dev/null
+
+# 檢查必填 Token 是否已設置
+if [ -z "${TG_TOKEN}" ] || [ "${TG_TOKEN}" = "你的Bot_Token" ]; then
+    echo -e "${RED}❌ 錯誤：.env 中的 TG_TOKEN 未填寫或無效。${NC}"
+    echo -e "${YELLOW}請編輯 ${ENV_FILE} 後重新執行腳本。${NC}"
+    exit 1
 fi
 
 # ---- 管理員 chat_id ----
@@ -107,7 +133,7 @@ fi
 
 
 
-# ================== 模型固定台詞 ===================
+# ================== 模型固定臺詞 ===================
 if [ -z "${MOK_start_msg}" ]; then
     MOK_start_msg="🎉 MokAgi 已成功部署並24小時在線！。"
 fi
