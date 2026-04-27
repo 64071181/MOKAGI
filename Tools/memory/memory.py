@@ -35,11 +35,17 @@ def handle_memory(args: str, chat_id: str = None) -> str:
 
     args = args.strip()
     if not args:
-        return "可用記憶命令：\n" \
-               "/memory remember <內容>\n" \
-               "/memory recall <關鍵詞>\n" \
-               "/memory list\n" \
-               "/memory forgetall"
+    return "📖 長期記憶使用說明：\n\n" \
+           "/memory remember <內容>\n" \
+           "  例：/memory remember 我喜欢喝咖啡\n" \
+           "  → 存储一条记忆\n\n" \
+           "/memory recall <關鍵詞>\n" \
+           "  例：/memory recall 喜欢喝什么\n" \
+           "  → 回忆相关记忆\n\n" \
+           "/memory list\n" \
+           "  → 查看最近记忆\n\n" \
+           "/memory forgetall\n" \
+           "  → 清空全部记忆"
 
     # ---- 分割子命令 ----
     parts = args.split(maxsplit=1)
