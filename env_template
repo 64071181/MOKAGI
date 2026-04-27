@@ -1,0 +1,13 @@
+# MokAgi 環境變量配置
+# 等號前後不要加空格
+
+TG_TOKEN=你的Bot_Token
+ADMIN_CHAT_ID=你的Telegram_Chat_ID
+
+# 允許使用機器人的用戶 ID，逗號分隔，留空則所有人可用
+ALLOWED_USERS=
+
+# 自定義消息（可留空使用默認值）
+MOK_start_msg=
+MOK_welcome_msg=
+MOK_unAllowed_msg=
