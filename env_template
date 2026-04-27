@@ -1,13 +1,20 @@
-# MokAgi 環境變量配置
-# 等號前後不要加空格
 
+# MokAgi 環境變量配置（請填寫你的真實信息）
+# 注意：等號前後不要加空格
+
+# agent名稱
+AGENT_NAME=您助手的名字
+
+# Telegram Bot Token
 TG_TOKEN=你的Bot_Token
+
+# 管理員 Chat ID（部署成功後會收到通知）
 ADMIN_CHAT_ID=你的Telegram_Chat_ID
 
-# 允許使用機器人的用戶 ID，逗號分隔，留空則所有人可用
-ALLOWED_USERS=
+# 允許使用機器人的用戶 ID，多個用英文逗號分隔 (留空則所有人可用)
+ALLOWED_USERS=你的ID,受權使用者ID1,受權使用者ID2（逗號分隔，留空則所有人可用）
 
-# 自定義消息（可留空使用默認值）
-MOK_start_msg=
-MOK_welcome_msg=
-MOK_unAllowed_msg=
+# ================== 模型固定台詞 ===================
+MOK_start_msg=🎉 MokAgi 已成功部署並24小時在線！
+MOK_welcome_msg=你好！我是有記憶的 AI 助手。
+MOK_unAllowed_msg=您未獲得使用權限。
