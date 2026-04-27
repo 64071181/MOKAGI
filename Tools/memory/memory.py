@@ -31,7 +31,7 @@ def _col():
 
 def handle_memory(args: str, chat_id: str = None):
     if MISSING_DEPS:
-        return "❌ 記憶插件缺少依賴，請在終端執行：\npip install chromadb"
+        return "❌ 記憶工具缺少依賴，請在終端執行：\npip install chromadb"
     if chat_id is None:
         return "❌ 無法識別使用者。"
 
@@ -42,7 +42,14 @@ def handle_memory(args: str, chat_id: str = None):
             [KeyboardButton("/memory remember "), KeyboardButton("/memory recall ")],
             [KeyboardButton("/memory list"), KeyboardButton("/memory forgetall")]
         ], resize_keyboard=True, one_time_keyboard=True)
-        help_text = "📖 長期記憶\n使用下方按鈕快速操作，或直接輸入命令："
+        help_text = (
+            "📖 長期記憶\n使用下方按鈕快速操作，或直接輸入命令："
+            "📖 長期記憶使用說明：\n\n"
+            "/memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n"
+            "/memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼\n\n"
+            "/memory list\n 列出所有記憶\n\n"
+            "/memory forgetall\n 忘記所有記憶\n\n"
+            )
         return (help_text, keyboard)
 
     parts = args.split(maxsplit=1)
@@ -54,11 +61,7 @@ def handle_memory(args: str, chat_id: str = None):
 
         if subcmd == "remember":
             if not content:
-                return "📖 長期記憶使用說明：\n\n" \
-               "/memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n" \
-               "/memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼\n\n" \
-               "/memory list\n\n" \
-               "/memory forgetall"
+                return "用法: /memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n"
             col.add(
                 documents=[content],
                 metadatas=[{"chat_id": chat_id}],
@@ -68,7 +71,7 @@ def handle_memory(args: str, chat_id: str = None):
 
         elif subcmd == "recall":
             if not content:
-                return "用法: /memory recall <關鍵詞>"
+                return "用法: /memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼"
             results = col.query(
                 query_texts=[content],
                 n_results=3,
@@ -103,5 +106,5 @@ def handle_memory(args: str, chat_id: str = None):
             return f"未知子命令: {subcmd}"
 
     except Exception as e:
-        logging.error(f"記憶插件錯誤: {e}")
+        logging.error(f"記憶工具錯誤: {e}")
         return f"❌ 記憶操作失敗: {e}"
