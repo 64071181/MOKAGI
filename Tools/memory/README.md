@@ -1,5 +1,8 @@
 # chromadb 記憶工具
 
+複製以下程式碼貼上主機執行即可
+
+
     #!/usr/bin/env bash
     # 安裝 ChromaDB 記憶工具
     PROJECT_DIR=~/.MokAgi
