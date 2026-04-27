@@ -44,7 +44,7 @@ MOK_NUM_THREADS="2" # Ollama 允許的最大 CPU 執行緒數，根據你的 CPU
 
 
 # ================== MokAgi Github 工具庫 ===================
-GITHUB_TOOLS_REPO="https://github.com/64071181/MokAgi-Tools"
+GITHUB_TOOLS_REPO="https://github.com/64071181/MokAgi/tree/main/Tools"
 
 # ================== cmd提示 顏色定義 ===================
 GREEN='\033[0;32m'
@@ -88,13 +88,23 @@ if [ ! -f "${ENV_FILE}" ]; then
 # MokAgi 環境變量配置（請填寫你的真實信息）
 # 注意：等號前後不要加空格
 
+# agent名稱
+AGENT_NAME=您助手的名字
+
+# Telegram Bot Token
 TG_TOKEN=你的Bot_Token
+
+# 管理員 Chat ID（部署成功後會收到通知）
 ADMIN_CHAT_ID=你的Telegram_Chat_ID
+
+# 允許使用機器人的用戶 ID，多個用英文逗號分隔 (留空則所有人可用)
 ALLOWED_USERS=你的ID,受權使用者ID1,受權使用者ID2（逗號分隔，留空則所有人可用）
 
+# ================== 模型固定台詞 ===================
 MOK_start_msg=🎉 MokAgi 已成功部署並24小時在線！
 MOK_welcome_msg=你好！我是有記憶的 AI 助手。
 MOK_unAllowed_msg=您未獲得使用權限。
+
 ENV_TEMPLATE
     fi
     echo -e "${YELLOW}==========================================${NC}"
@@ -491,7 +501,7 @@ async def reload_tools_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # 通知用戶
     new_count = len(get_plugin_commands())
-    await update.message.reply_text(f"✅ 工具已熱加載，當前共有 {new_count} 個工具命令。")
+    await update.message.reply_text(f"✅ 工具已加載，當前共有 {new_count} 個工具命令。")
 
 async def send_welcome(app):
     if ADMIN_CHAT_ID:
