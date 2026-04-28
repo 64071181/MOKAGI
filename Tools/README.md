@@ -18,7 +18,7 @@
     mkdir -p "${PLUGIN_DIR}"
     
     # 下載工具
-    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/eaxmplo/eaxmplo.py -o "${PLUGIN_DIR}/memory.py"
+    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/eaxmplo/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
     
     # 安裝依賴
     ### {如有需要}
