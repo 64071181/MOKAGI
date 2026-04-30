@@ -1,7 +1,7 @@
 
 
 #!/usr/bin/env bash
-# 202604301052
+# 202605010257
 # ==============================================
 # ==============================================
 # ================== 基礎設定 ===================
@@ -20,28 +20,6 @@ BOT_SCRIPT="${PROJECT_DIR}/${MokAgiName}.py" # 機器人執行主指令碼
 # ================== 一切 token ===================
 ENV_FILE="${PROJECT_DIR}/.env"
 
-# ================== 模型設定 ===================
-MOK_MODEL_NAME="huihui_ai/qwen3-abliterated:1.7b" # 這裡指定 Ollama 模型名稱，可在 https://ollama.com/huihui_ai/qwen3-abliterated:1.7b 直接找其他模型
-MOK_MODEL_api="http://localhost:11434/api/generate" # Ollama API 端點，保持不變
-
-
-MOK_MAX_HISTORY_ROUNDS="6" # 對話歷史保留輪數，過多會增加上下文長度，過少則無記憶感
-MOK_num_ctx="16384" # 模型的上下文視窗大小(如 8192、16384）(32768 = 約 2.2 萬個中文字 / 40 到 50 頁 A4 紙滿滿的文字量）
-MOK_num_predict="8192" # 模型的最大生成長度(如 2048、4096、8192）(8192 = 5,400 中文字 / 6 頁 A4 紙滿滿的文字量)
-
-MOK_temperature="0.8"  # 溫度 / 隨機性(0 嚴謹, 1.0+ 創意)
-MOK_repeat_penalty="1.5" # 重複懲罰，防止鬼打牆(1.0:不懲罰，2.0:太高)
-MOK_presence_penalty="0.6" # 字重複施加懲罰。正值增加新詞可能性，負值鼓勵重複
-MOK_frequency_penalty="0.5" # 字出現頻率施加懲罰，正值減少重複，負值鼓勵重複
-MOK_top_p="0.9"
-MOK_top_k="50"
-    # top_p              = 當 AI 準備說下一個字時，它會給所有可能的字打分數(機率）。0.1 = 這會讓說話非常嚴謹、死板、重複性高。0.9 = AI 會考慮總和達到 90% 的大量候選字。這會讓說話非常豐富、有創意、出人意料。
-    # top_k              = 當 AI 準備說下一個字時，它會給所有可能的字打分數(機率）。top_k=50 會讓 AI 只考慮分數最高的 50 個字。這會讓說話更嚴謹、重複性高，但仍有一定變化。top_k=0 則不限制候選字數量，完全由 temperature 和 top_p 控制隨機性。
-
-    # stop               = 生成這些字時，立即停止輸出。
-
-# ================== Ollama設定 ===================
-MOK_NUM_THREADS="2" # Ollama 允許的最大 CPU 執行緒數，根據你的 CPU 核心數調整(如 2、4、8）
 
 
 # ================== MokAgi Github 工具庫 ===================
@@ -73,21 +51,17 @@ echo -e "${GREEN}==========================================${NC}"
 echo -e "${GREEN}  [1/7] 環境設定 ${NC}"
 echo -e "${GREEN}==========================================${NC}"
 
-# ---- 建立專案根目錄 ----
+# ================== 建立專案根目錄 ===================
 mkdir -p "${PROJECT_DIR}"
 cd "${PROJECT_DIR}"
 
 
-# ---- 檢查並準備 .env ----
+# ================== 檢查並準備 .env ===================
 if [ ! -f "${ENV_FILE}" ]; then
-    # .env 不存在，下載模板
-    echo -e "${YELLOW}未找到 .env 配置文件，正在為你下載模板...${NC}"
-    curl -sL "https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/env_template" -o "${ENV_FILE}"
-    if [ $? -ne 0 ]; then
-        # 如果下載失敗，手動生成一個最小模板
-        cat > "${ENV_FILE}" << 'ENV_TEMPLATE'
-# MokAgi 環境變量配置（請填寫你的真實信息）
-# 注意：等號前後不要加空格
+    # .env 不存在，手動生成一個最小模板
+    cat > "${ENV_FILE}" << 'ENV_TEMPLATE'
+# MokAgi 環境變量配置（請填寫你的信息）
+# 注意：等號前後不要加空格 " '
 
 # agent名稱
 AGENT_NAME=您助手的名字
@@ -101,22 +75,59 @@ ADMIN_CHAT_ID=你的Telegram_Chat_ID
 # 允許使用機器人的用戶 ID，多個用英文逗號分隔 (留空則所有人可用)
 ALLOWED_USERS=你的ID,受權使用者ID1,受權使用者ID2（逗號分隔，留空則所有人可用）
 
-# ================== 模型固定台詞 ===================
-MOK_start_msg=🎉 MokAgi 已成功部署並24小時在線！
-MOK_welcome_msg=你好！我是有記憶的 AI 助手。
-MOK_unAllowed_msg=您未獲得使用權限。
+# ================== 模型設定 ===================
+MOK_MODEL_NAME=qwen3:1.7b
+# 這裡指定 Ollama 模型名稱，可在 https://ollama.com/huihui_ai/qwen3-abliterated:1.7b 直接找其他模型
+
+MOK_MODEL_api=http://localhost:11434/api/generate
+# Ollama API 端點，保持不變
+
+MOK_MAX_HISTORY_ROUNDS=6
+# 對話歷史保留輪數，過多會增加上下文長度，過少則無記憶感
+
+MOK_num_ctx=16384
+# 模型的上下文視窗大小(如 8192、16384）(32768 = 約 2.2 萬個中文字 / 40 到 50 頁 A4 紙滿滿的文字量）
+
+MOK_num_predict=8192
+# 模型的最大生成長度(如 2048、4096、8192）(8192 = 5,400 中文字 / 6 頁 A4 紙滿滿的文字量)
+
+MOK_temperature=0.8
+# 溫度 / 隨機性(0 嚴謹, 1.0+ 創意)
+
+MOK_repeat_penalty=1.5
+# 重複懲罰，防止鬼打牆(1.0:不懲罰，2.0:太高)
+
+MOK_presence_penalty=0.6
+# 字重複施加懲罰。正值增加新詞可能性，負值鼓勵重複
+
+MOK_frequency_penalty=0.5
+# 字出現頻率施加懲罰，正值減少重複，負值鼓勵重複
+
+MOK_top_p=0.9
+# top_p  = 當 AI 準備說下一個字時，它會給所有可能的字打分數(機率）。0.1 = 這會讓說話非常嚴謹、死板、重複性高。0.9 = AI 會考慮總和達到 90% 的大量候選字。這會讓說話非常豐富、有創意、出人意料。
+
+MOK_top_k=50
+# top_k  = 當 AI 準備說下一個字時，它會給所有可能的字打分數(機率）。top_k=50 會讓 AI 只考慮分數最高的 50 個字。這會讓說話更嚴謹、重複性高，但仍有一定變化。top_k=0 則不限制候選字數量，完全由 temperature 和 top_p 控制隨機性。
 
 # ================== 自動記憶檢索 ===================
 # 數字越大，每次對話會取越多條記憶（建議 1~3）。重啟後生效。
 MOK_MEMORY_RECALL_COUNT=3
 
+# ================== Ollama設定 ===================
+MOK_NUM_THREADS=2
+# Ollama 允許的最大 CPU 執行緒數，根據你的 CPU 核心數調整(如 2、4、8）
+
+# ================== 模型固定台詞 ===================
+MOK_start_msg=🎉 MokAgi 已成功部署並24小時在線！
+MOK_welcome_msg=你好！我是有記憶的 AI 助手。
+MOK_unAllowed_msg=您未獲得使用權限。
+
 ENV_TEMPLATE
-    fi
     echo -e "${YELLOW}==========================================${NC}"
     echo -e "請先編輯 ${ENV_FILE}，填入你的 Telegram Bot Token 和 Chat ID。"
     echo -e "       nano ${ENV_FILE}"
     echo -e ""
-    echo -e "編輯完成後，Ctrl+X，按 Y 儲存，再按 Enter "
+    echo -e "編輯完成後，Ctrl+X > 按 Y 儲存 > 再按 Enter "
     echo -e ""
     echo -e "，再執行腳本:"
     echo -e "       bash ~/MokAgi0.sh"
@@ -124,35 +135,125 @@ ENV_TEMPLATE
     echo -e "==========================================${NC}"
     exit 0
 fi
-
 # 清理 \r 字符並載入環境變量
 tr -d '\r' < "${ENV_FILE}" > "${ENV_FILE}.clean"
 mv "${ENV_FILE}.clean" "${ENV_FILE}"
 export $(grep -v '^#' "${ENV_FILE}" | xargs) 2>/dev/null
 
-# 檢查必填 Token 是否已設置
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ================== agent名稱 ===================
+if [ -z "${AGENT_NAME}" ]; then
+    AGENT_NAME="ai助手"
+fi
+
+# ================== 檢查必填 Telegram Bot Token 是否已設置 ===================
 if [ -z "${TG_TOKEN}" ] || [ "${TG_TOKEN}" = "你的Bot_Token" ]; then
     echo -e "${RED}❌ 錯誤：.env 中的 TG_TOKEN 未填寫或無效。${NC}"
     echo -e "${YELLOW}請編輯 ${ENV_FILE} 後重新執行腳本。${NC}"
     exit 1
 fi
 
-# ---- 管理員 chat_id ----
+# ================== 管理員 chat_id ===================
 if [ -z "${ADMIN_CHAT_ID}" ]; then
     echo -e "${YELLOW}請輸入你的 Telegram Chat ID(可透過 @userinfobot 獲取）:${NC}"
     read -p "Admin Chat ID: " ADMIN_CHAT_ID
     echo "ADMIN_CHAT_ID=${ADMIN_CHAT_ID}" >> "${ENV_FILE}"
 fi
 
-# ---- 允許使用的使用者 ----
+# ================== 允許使用的使用者 ===================
 if [ -z "${ALLOWED_USERS}" ]; then
     echo -e "${YELLOW}請輸入允許使用機器人的使用者 ID，多個用逗號分隔(留空則所有人可用）:${NC}"
     read -p "Allowed User IDs: " ALLOWED_USERS
     echo "ALLOWED_USERS=${ALLOWED_USERS}" >> "${ENV_FILE}"
 fi
 
-if [ -z "${AGENT_NAME}" ]; then
-    AGENT_NAME="ai助手"
+# ================== 模型設定 ===================
+if [ -z "${MOK_MODEL_NAME}" ]; then
+    MOK_MODEL_NAME="qwen3:1.7b"
+    # 這裡指定 Ollama 模型名稱，可在 https://ollama.com/huihui_ai/qwen3-abliterated:1.7b 直接找其他模型
+fi
+
+if [ -z "${MOK_MODEL_api}" ]; then
+    MOK_MODEL_api="http://localhost:11434/api/generate"
+    # Ollama API 端點，保持不變
+fi
+
+if [ -z "${MOK_MAX_HISTORY_ROUNDS}" ]; then
+    MOK_MAX_HISTORY_ROUNDS="6"
+    # 對話歷史保留輪數，過多會增加上下文長度，過少則無記憶感
+fi
+
+if [ -z "${MOK_num_ctx}" ]; then
+    MOK_num_ctx="16384"
+    # 模型的上下文視窗大小(如 8192、16384）(32768 = 約 2.2 萬個中文字 / 40 到 50 頁 A4 紙滿滿的文字量）
+fi
+
+if [ -z "${MOK_num_predict}" ]; then
+    MOK_num_predict="8192"
+    # 模型的最大生成長度(如 2048、4096、8192）(8192 = 5,400 中文字 / 6 頁 A4 紙滿滿的文字量)
+fi
+
+if [ -z "${MOK_temperature}" ]; then
+    MOK_temperature="0.8"
+    # 溫度 / 隨機性(0 嚴謹, 1.0+ 創意)
+fi
+
+if [ -z "${MOK_repeat_penalty}" ]; then
+    MOK_repeat_penalty="1.5"
+    # 重複懲罰，防止鬼打牆(1.0:不懲罰，2.0:太高)
+fi
+
+if [ -z "${MOK_presence_penalty}" ]; then
+    MOK_presence_penalty="0.6"
+    # 字重複施加懲罰。正值增加新詞可能性，負值鼓勵重複
+fi
+
+if [ -z "${MOK_frequency_penalty}" ]; then
+    MOK_frequency_penalty="0.5"
+    # 字出現頻率施加懲罰，正值減少重複，負值鼓勵重複
+fi
+
+if [ -z "${MOK_top_p}" ]; then
+    MOK_top_p="0.9"
+    # top_p              = 當 AI 準備說下一個字時，它會給所有可能的字打分數(機率）。0.1 = 這會讓說話非常嚴謹、死板、重複性高。0.9 = AI 會考慮總和達到 90% 的大量候選字。這會讓說話非常豐富、有創意、出人意料。
+fi
+
+if [ -z "${MOK_top_k}" ]; then
+    MOK_top_k="50"
+    # top_k              = 當 AI 準備說下一個字時，它會給所有可能的字打分數(機率）。top_k=50 會讓 AI 只考慮分數最高的 50 個字。這會讓說話更嚴謹、重複性高，但仍有一定變化。top_k=0 則不限制候選字數量，完全由 temperature 和 top_p 控制隨機性。
+fi
+    # stop               = 生成這些字時，立即停止輸出。
+
+# ================== 自動記憶檢索 ===================
+# 數字越大，每次對話會取越多條記憶（建議 1~3）。重啟後生效。
+if [ -z "${MOK_MEMORY_RECALL_COUNT}" ]; then
+    MOK_MEMORY_RECALL_COUNT=3
+fi
+
+# ================== Ollama設定 ===================
+if [ -z "${MOK_NUM_THREADS}" ]; then
+    MOK_NUM_THREADS="2"
+    # Ollama 允許的最大 CPU 執行緒數，根據你的 CPU 核心數調整(如 2、4、8）
 fi
 
 # ================== 模型固定臺詞 ===================
@@ -165,8 +266,6 @@ fi
 if [ -z "${MOK_unAllowed_msg}" ]; then
     MOK_unAllowed_msg="您未獲得使用權限，請聯繫管理員。"
 fi
-
-
 
 
 
@@ -305,6 +404,12 @@ rm -f "${BOT_SCRIPT}"
 cat > "${BOT_SCRIPT}" << PYEOF
 import asyncio, logging, httpx, os, json, importlib.util, re
 
+# admin pm2 logs 用
+AD_AgiName = "${MokAgiName}"
+os.environ["AD_AgiName"] = AD_AgiName
+AD_AGENT_NAME = "${AGENT_NAME}"
+os.environ["AD_AGENT_NAME"] = AD_AGENT_NAME
+
 def sanitize(s: str) -> str:
     """只移除不可見字符，保留所有正常文字（中英文等）"""
     # 移除零寬字符和 BOM
@@ -315,6 +420,7 @@ def sanitize(s: str) -> str:
 
 from collections import defaultdict
 from telegram import Update, BotCommand
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 TELEGRAM_TOKEN = os.environ.get("TG_TOKEN", "")
@@ -393,29 +499,13 @@ async def query_ollama(chat_id: int, user_text: str) -> str:
         try:
             recalled = await tools["memory"].recall_memory(chat_id, user_text, memory_recall_count)
             if recalled:
-                # 人稱轉換：將記憶中的「你/妳」換成「我」，將「我」換成「你/妳」
-                def swap_pronouns(text: str) -> str:
-                    # 先處理「我」→臨時標記，避免衝突
-                    text = text.replace("我", "##ME##")
-                    # 「你/妳」→「我」
-                    text = text.replace("你", "我").replace("妳", "我")
-                    # 臨時標記→「你/妳」
-                    text = text.replace("##ME##", "你")
-                    return text
-                recalled_transformed = swap_pronouns(recalled)
-                # 角色提示
-                role_hint = (
-                    "請注意：以下記憶已經為你轉換成人稱正確的版本（「我」代表你自己）。\n"
-                    "請根據記憶準確回答。\n\n"
-                )
-                # 將記憶轉換為明確的「助手自述」格式
-                recalled_self = recalled.replace("你是", "我是").replace("你", "我").replace("妳", "我")
-                memory_context = f"""【助手自述】
-                {recalled_self}
+                # 标准化後的記憶已經是「用戶的...」格式，直接使用
+                memory_context = f"""【用戶相關記憶】
+{recalled}
 
-請記住：當使用者問「我是誰」時，你應該回答「你是{recalled_self.replace('我是', '')}」。
-當使用者問「你叫什麼名字」時，你應該回答「我叫...」。
-
+請根據以上關於用戶的記憶回答問題。例如：
+- 如果用戶問「我是誰」，你應該回答記憶中描述的用戶身份。
+- 如果記憶中寫「用戶的名字是 sam」，則回答「你是 sam」。
 """
         except Exception as e:
             logging.warning(f"記憶檢索失敗: {e}")
@@ -490,13 +580,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         chat_id=temp_msg.chat_id,
                         message_id=temp_msg.message_id,
                         text=text,
-                        reply_markup=markup
+                        reply_markup=markup,
+                        parse_mode='HTML'
                     )
                 elif result is not None:
                     await context.bot.edit_message_text(
                         chat_id=temp_msg.chat_id,
                         message_id=temp_msg.message_id,
-                        text=result
+                        text=result,
+                        parse_mode='HTML'
                     )
                 else:
                     await context.bot.edit_message_text(
