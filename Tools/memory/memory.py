@@ -1,9 +1,28 @@
 
 PLUGIN_INFO = {
     "command": "/memory",
+    "icon":"🧠",
     "description": "長期記憶 (remember, recall, list, forgetall)",
     "handler": "handle_memory",
-    "updata":"202604272310"
+    "intent_keywords": [
+        ("記住", "/memory remember"),
+        ("記得", "/memory remember"),
+        ("儲存", "/memory remember"),
+        ("保存", "/memory remember"),
+
+        ("之前", "/memory recall"),
+        ("我說過", "/memory recall"),
+        ("找出", "/memory recall"),
+
+        ("列出記憶", "/memory list"),
+        ("所有記憶", "/memory list"),
+        ("顯示記憶", "/memory list"),
+
+        ("忘記所有", "/memory forgetall"),
+        ("清空記憶", "/memory forgetall"),
+        ("刪除所有記憶", "/memory forgetall")
+    ],
+    "updata":"202604301052"
 }
 
 import logging, os
@@ -29,6 +48,23 @@ def _col():
         _collection = _client.get_or_create_collection(name="mokagi_memory")
     return _collection
 
+async def recall_memory(chat_id: int, query: str, n_results: int = 1) -> str:
+    if MISSING_DEPS:
+        return ""
+    try:
+        col = _col()
+        results = col.query(
+            query_texts=[query],
+            n_results=n_results,
+            where={"chat_id": str(chat_id)}
+        )
+        docs = results.get("documents", [[]])[0]
+        if docs:
+            return "\n".join(docs)
+    except Exception as e:
+        logging.error(f"記憶檢索錯誤: {e}")
+    return ""
+
 def handle_memory(args: str, chat_id: str = None):
     if MISSING_DEPS:
         return "❌ 記憶工具缺少依賴，請在終端執行：\npip install chromadb"
@@ -37,11 +73,6 @@ def handle_memory(args: str, chat_id: str = None):
 
     args = args.strip()
     if not args:
-        # 弹出快捷键盘
-        keyboard = ReplyKeyboardMarkup([
-            [KeyboardButton("/memory remember "), KeyboardButton("/memory recall ")],
-            [KeyboardButton("/memory list"), KeyboardButton("/memory forgetall")]
-        ], resize_keyboard=True, one_time_keyboard=True)
         help_text = (
             "📖 長期記憶\n使用下方按鈕快速操作，或直接輸入命令："
             "📖 長期記憶使用說明：\n\n"
@@ -50,7 +81,7 @@ def handle_memory(args: str, chat_id: str = None):
             "/memory list\n 列出所有記憶\n\n"
             "/memory forgetall\n 忘記所有記憶\n\n"
             )
-        return (help_text, keyboard)
+        return (help_text)
 
     parts = args.split(maxsplit=1)
     subcmd = parts[0].lower()
