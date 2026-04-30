@@ -12,7 +12,7 @@
 ## README.md eaxmplo
 
      #!/usr/bin/env bash
-    # 安裝 ChromaDB 記憶工具
+    # 安裝 eaxmplo 
     PROJECT_DIR=~/.MokAgi
     PLUGIN_DIR="${PROJECT_DIR}/tools"
     mkdir -p "${PLUGIN_DIR}"
@@ -24,7 +24,7 @@
     ### {如有需要}
     
     # 加載
-    echo "✅ 記憶工具已安裝！請在 Telegram 發送 /reload 啟用。"
+    echo "✅ eaxmplo 已安裝！請在 Telegram 發送 /reload 啟用。"
 
 
 ===
