@@ -3,13 +3,11 @@
 
     toolName
       |
-       --- README.md(說明、一鍵安裝)
-      |
        --- toolName.py(說明、主程式)
 
 ===
 
-## README.md eaxmplo
+## 下載工具
 
      #!/usr/bin/env bash
     # 安裝 eaxmplo 
@@ -18,7 +16,7 @@
     mkdir -p "${PLUGIN_DIR}"
     
     # 下載工具
-    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/eaxmplo/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
+    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
     
     # 安裝依賴
     ### {如有需要}
