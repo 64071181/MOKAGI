@@ -9,20 +9,23 @@
 
 ## 下載工具 (cmd)
 
-     #!/usr/bin/env bash
+    #!/usr/bin/env bash
     PROJECT_DIR=~/.MokAgi
     PLUGIN_DIR="${PROJECT_DIR}/tools"
     mkdir -p "${PLUGIN_DIR}"
+    
     curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/tools/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
+    
     # 安裝依賴
     ### {如有需要}
+    
     # 加載
     echo "✅ eaxmplo 已安裝！請在 Telegram 發送 /reload 啟用。"
 
 
 ===
 
-## toolName.py eaxmplo
+## eaxmplo.py 
 
     PLUGIN_INFO = {
         "command": "/eaxmplo",
