@@ -1,7 +1,25 @@
 PLUGIN_INFO = {
     "command": "/admin",  # 這個命令會出現在 TG 菜單
+    "icon":"🤖",
+    "handler": "handle_admin",
     "description": "管理工具 (htop, ollama list, rm 等)",
-    "handler": "handle_admin"
+    "intent_keywords": [
+        ("系統負載", "/admin htop"),
+        ("htop", "/admin htop"),
+        ("查看負載", "/admin htop"),
+        ("CPU使用率", "/admin cpu"),
+        ("cpu", "/admin cpu"),
+        ("查看cpu", "/admin cpu"),
+        ("模型列表", "/admin ollama_list"),
+        ("已安裝模型", "/admin ollama_list"),
+        ("ollama列表", "/admin ollama_list"),
+        ("刪除模型", "/admin ollama_rm"),
+        ("移除模型", "/admin ollama_rm"),
+        ("日誌", "/admin logs"),
+        ("查看日誌", "/admin logs"),
+        ("pm2日誌", "/admin logs")
+    ],
+    "updata":"202604301052"
 }
 
 import os
