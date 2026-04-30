@@ -13,7 +13,7 @@
     PROJECT_DIR=~/.MokAgi
     PLUGIN_DIR="${PROJECT_DIR}/tools"
     mkdir -p "${PLUGIN_DIR}"
-    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/Tools/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
+    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/tools/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
     # 安裝依賴
     ### {如有需要}
     # 加載
