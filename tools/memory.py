@@ -22,10 +22,10 @@ PLUGIN_INFO = {
         ("清空記憶", "/memory forgetall"),
         ("刪除所有記憶", "/memory forgetall")
     ],
-    "updata":"202604301052"
+    "updata":"202605010257"
 }
 
-import logging, os
+import logging, os, re
 import chromadb
 from chromadb.config import Settings
 from telegram import ReplyKeyboardMarkup, KeyboardButton
@@ -73,15 +73,25 @@ def handle_memory(args: str, chat_id: str = None):
 
     args = args.strip()
     if not args:
-        help_text = (
-            "📖 長期記憶\n使用下方按鈕快速操作，或直接輸入命令："
-            "📖 長期記憶使用說明：\n\n"
-            "/memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n"
-            "/memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼\n\n"
-            "/memory list\n 列出所有記憶\n\n"
-            "/memory forgetall\n 忘記所有記憶\n\n"
-            )
-        return (help_text)
+        help_text = '''
+🧠 長期記憶使用說明：
+    (使用下方按鈕快速操作，或直接輸入命令)
+    <pre>/memory remember 內容</pre>
+    例：/memory remember 我喜歡喝咖啡
+    <pre>/memory recall 關鍵詞</pre>
+    例：/memory recall 喜歡喝什麼
+
+    列出所有記憶<pre>/memory list</pre>
+
+    忘記所有記憶<pre>/memory forgetall</pre>
+
+=====
+🧩 自然語言意圖辨識：
+            '''
+        # 动态添加 intent_keywords（不转义）
+        for keyword, cmd in PLUGIN_INFO["intent_keywords"]:
+            help_text += f'   "{keyword}" → {cmd}\n'
+        return help_text
 
     parts = args.split(maxsplit=1)
     subcmd = parts[0].lower()
@@ -90,19 +100,35 @@ def handle_memory(args: str, chat_id: str = None):
     try:
         col = _col()
 
+        # 处理 remember 子命令
         if subcmd == "remember":
             if not content:
-                return "用法: /memory remember <內容>\n  例：/memory remember 我喜歡喝咖啡\n\n"
+                return "用法: /memory remember 內容\n  例：/memory remember 我喜歡喝咖啡\n\n"
+            # ----- 新增：人稱標準化（將用戶對自己的描述轉為無歧義的第三人稱）-----
+            normalized = content
+            # 移除開頭的「記得」或「記住」
+            normalized = re.sub(r'^(?:記得|記住)\s*', '', normalized)
+            # 將「我是」→「用戶的」
+            normalized = re.sub(r'我是', '用戶是', normalized)
+            # 將「我叫」→「用戶名字是」
+            normalized = re.sub(r'我叫', '用戶叫', normalized)
+            # 將「我」單獨（非「我的」）→「用戶」
+            normalized = re.sub(r'\b我\b', '用戶', normalized)
+            # 將「你/妳」→「助手」（如果用戶提到了助手）
+            normalized = re.sub(r'你|妳', '我', normalized)
+            # 可選：將「我的」→「用戶的」
+            normalized = re.sub(r'我的', '用戶的', normalized)
+            # ------------------------------------------------------------------
             col.add(
-                documents=[content],
+                documents=[normalized],
                 metadatas=[{"chat_id": chat_id}],
                 ids=[f"{chat_id}_{col.count()}"]
             )
-            return "✅ 已記住。"
+            return f"✅ 已記住（標準化為：{normalized}）"
 
         elif subcmd == "recall":
             if not content:
-                return "用法: /memory recall <關鍵詞>\n  例：/memory recall 喜歡喝什麼"
+                return "用法: /memory recall 關鍵詞\n  例：/memory recall 喜歡喝什麼"
             results = col.query(
                 query_texts=[content],
                 n_results=3,

@@ -19,7 +19,7 @@ PLUGIN_INFO = {
         ("查看日誌", "/admin logs"),
         ("pm2日誌", "/admin logs")
     ],
-    "updata":"202604301052"
+    "updata":"202605010257"
 }
 
 import os
@@ -61,12 +61,26 @@ def handle_admin(args: str, chat_id: str = None) -> str:
     logging.info(f"Admin plugin invoked: args='{args}', chat_id={chat_id}")
     args = args.strip()
     if not args:
-        return "可用管理命令：\n" \
-               "  /admin htop        - 查看系統負載\n" \
-               "  /admin cpu          - 查看 CPU 使用率\n" \
-               "  /admin ollama_list  - 查看已安裝的模型\n" \
-               "  /admin ollama_rm <模型名> - 刪除指定模型\n" \
-               "  /admin logs <行數>  - 查看 MokAgi 日誌 (預設15行)"
+        help_text = '''
+🤖 管理命令：
+
+    查看系統負載<pre>/admin htop</pre>
+
+    查看 CPU 使用率<pre>/admin cpu</pre>
+
+    查看已安裝的模型<pre>/admin ollama_list</pre>
+
+    刪除指定模型<pre>/admin ollama_rm 模型名</pre>
+
+    查看 MokAgi 日誌 (預設15行)<pre>/admin logs 行數</pre>
+
+=====
+🧩 自然語言意圖辨識：
+        '''
+        # 动态添加 intent_keywords（不转义）
+        for keyword, cmd in PLUGIN_INFO["intent_keywords"]:
+            help_text += f'   "{keyword}" → {cmd}\n'
+        return help_text
 
     # --- 公開命令（任何授權用戶都可執行）---
     if args == "htop":
@@ -104,8 +118,11 @@ def handle_admin(args: str, chat_id: str = None) -> str:
         lines = args.split()
         num = lines[1] if len(lines) > 1 and lines[1].isdigit() else 15
         try:
+            mokagi_name = os.environ.get("AD_AgiName")
+            agent_name = os.environ.get("AD_AGENT_NAME")
+
             result = subprocess.run(
-                f"pm2 logs MokAgi --lines {num} --nostream --raw", shell=True,
+                f"pm2 logs {mokagi_name}_{agent_name} --lines {num} --nostream --raw", shell=True,
                 capture_output=True, text=True, timeout=30
             )
             return f"<pre>{result.stdout[-4000:]}</pre>" if result.stdout else "沒有日誌。"
@@ -119,7 +136,7 @@ def handle_admin(args: str, chat_id: str = None) -> str:
 
         parts = args.split()
         if len(parts) < 2:
-            return "用法: /admin ollama_rm <模型名稱>"
+            return "用法: /admin ollama_rm 模型名稱"
 
         model_name = parts[1]
 
