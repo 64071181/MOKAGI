@@ -692,7 +692,7 @@ def main():
     asyncio.get_event_loop().run_until_complete(update_bot_commands(app))
     # 傳送歡迎訊息
     asyncio.get_event_loop().run_until_complete(send_welcome(app))
-    print("✅ 多輪記憶機器人啟動中... 傳送 /clear 可清空對話歷史")
+    print("✅ ${AGENT_NAME} 啟動中... 傳送 /clear 可清空對話歷史")
     app.run_polling()
 
 if __name__ == "__main__":
