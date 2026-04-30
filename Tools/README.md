@@ -32,10 +32,15 @@
 ## toolName.py eaxmplo
 
     PLUGIN_INFO = {
-        "command": "/memory",
-        "description": "長期記憶 (remember, recall, list, forgetall)",
-        "handler": "handle_memory",
+        "command": "/eaxmplo",
+        "icon":"😘",
+        "description": "範本 (tool1, tool2)",
+        "handler": "handle_eaxmplo",
+        "intent_keywords": [
+            ("範本1", "/tool1"),
+            ("範本2", "/tool2"),
+        ],
         "updata":"202604272310"
     }
-    
-    # python code
+
+    # ================== python code ===================
