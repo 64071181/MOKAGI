@@ -1,7 +1,7 @@
 # 自製工具
 
 
-    toolName
+    tools
       |
        --- toolName.py(說明、主程式)
 
