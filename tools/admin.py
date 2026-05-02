@@ -2,29 +2,100 @@ PLUGIN_INFO = {
     "command": "/admin",  # 這個命令會出現在 TG 菜單
     "icon":"🤖",
     "handler": "handle_admin",
-    "description": "管理工具 (htop, ollama list, rm 等)",
+    "description": "管理工具 (htop, ollama list, rm, pip install 等)",
     "intent_keywords": [
-        ("系統負載", "/admin htop"),
         ("htop", "/admin htop"),
-        ("查看負載", "/admin htop"),
-        ("CPU使用率", "/admin cpu"),
+
         ("cpu", "/admin cpu"),
-        ("查看cpu", "/admin cpu"),
+
         ("模型列表", "/admin ollama_list"),
-        ("已安裝模型", "/admin ollama_list"),
-        ("ollama列表", "/admin ollama_list"),
-        ("刪除模型", "/admin ollama_rm"),
-        ("移除模型", "/admin ollama_rm"),
-        ("日誌", "/admin logs"),
-        ("查看日誌", "/admin logs"),
-        ("pm2日誌", "/admin logs")
+
+        ("日誌", "/admin logs")
     ],
-    "updata":"202605010257"
+    "updata":"202605030048"
 }
 
 import os
 import subprocess
 import logging
+import html
+import time
+import hashlib
+
+
+
+
+
+
+
+
+
+
+
+# 敏感命令 二次確認機制
+pending_confirmations = {}
+def generate_token(chat_id: str, cmd: str, args: str) -> str:
+    """生成一次性確認 token"""
+    raw = f"{chat_id}_{cmd}_{args}_{time.time()}_{os.urandom(4).hex()}"
+    return hashlib.md5(raw.encode()).hexdigest()[:12]
+
+def confirm_command(chat_id: str, token: str) -> tuple:
+    """嘗試確認命令，返回 (成功標誌, 結果字串)"""
+    if token not in pending_confirmations:
+        return False, "❌ 確認碼無效或已過期。請重新發送原命令。"
+    info = pending_confirmations[token]
+    if str(info["chat_id"]) != str(chat_id):
+        return False, "❌ 確認碼與用戶不匹配。"
+    # 檢查是否超時（30秒）
+    if time.time() - info["timestamp"] > 30:
+        del pending_confirmations[token]
+        return False, "❌ 確認碼已超時（30秒）。請重新發送原命令。"
+    # 執行實際命令
+    cmd_type = info["cmd"]
+    args = info["args"]
+    del pending_confirmations[token]  # 用完即刪
+    if cmd_type == "ollama_rm":
+        success, result = execute_ollama_rm(args)
+    elif cmd_type == "pip_install":
+        success, result = execute_pip_install(args)
+    else:
+        return False, "❌ 未知命令類型。"
+    return success, result
+
+
+
+# 敏感命令實際執行
+def execute_ollama_rm(model_name: str) -> tuple:
+    """實際執行刪除模型"""
+    try:
+        result = subprocess.run(
+            f"ollama rm {model_name}", shell=True,
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            return True, f"✅ 模型 {model_name} 已刪除。"
+        else:
+            return False, f"❌ 刪除失敗: {result.stderr}"
+    except Exception as e:
+        return False, f"❌ 執行失敗: {e}"
+
+def execute_pip_install(rest: str) -> tuple:
+    """實際執行 pip install"""
+    if "--user" not in rest:
+        rest = "--user " + rest
+    cmd = f"pip install {rest}"
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0:
+            output = html.escape(result.stdout[-3000:]) if result.stdout else "安裝成功，無控制檯輸出。"
+            return True, f"✅ pip 安裝成功\n<pre>{output}</pre>"
+        else:
+            error = html.escape(result.stderr[-3000:]) if result.stderr else "未知錯誤。"
+            return False, f"❌ pip 安裝失敗\n<pre>{error}</pre>"
+    except subprocess.TimeoutExpired:
+        return False, "❌ 安裝超時（超過300秒）。"
+    except Exception as e:
+        return False, f"❌ 執行失敗: {html.escape(str(e))}"
 
 # 從環境變量獲取管理員 ID，用於敏感操作權限檢查
 ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "")
@@ -50,6 +121,24 @@ def is_model_running(model_name: str) -> bool:
     except Exception:
         return False  # 如果檢查出錯，為安全起見默認認為不在運行，但可以記錄日誌
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def handle_admin(args: str, chat_id: str = None) -> str:
     """
     管理命令路由，根據 args 執行不同操作
@@ -74,13 +163,22 @@ def handle_admin(args: str, chat_id: str = None) -> str:
 
     查看 MokAgi 日誌 (預設15行)<pre>/admin logs 行數</pre>
 
+    安裝 Python 套件<pre>/admin pip install 包名</pre>
+
 =====
 🧩 自然語言意圖辨識：
         '''
-        # 动态添加 intent_keywords（不转义）
+        # 動態添加 intent_keywords（不轉義）
         for keyword, cmd in PLUGIN_INFO["intent_keywords"]:
             help_text += f'   "{keyword}" → {cmd}\n'
         return help_text
+
+
+    # --- 確認命令 ---
+    if args.startswith("confirm "):
+        token = args.split(maxsplit=1)[1].strip()
+        success, result = confirm_command(chat_id, token)
+        return result
 
     # --- 公開命令（任何授權用戶都可執行）---
     if args == "htop":
@@ -129,32 +227,56 @@ def handle_admin(args: str, chat_id: str = None) -> str:
         except Exception as e:
             return f"❌ 執行失敗: {e}"
 
-    # --- 敏感命令（僅管理員）---
-    elif args.startswith("ollama_rm"):
-        if not chat_id or not is_admin(chat_id):
-            return "⛔ 此操作僅限管理員執行。"
 
+
+
+
+
+
+
+
+
+
+
+
+    # --- 敏感命令：需要二次確認 ---
+    if not chat_id or not is_admin(chat_id):
+        return "⛔ 此操作僅限管理員執行。"
+
+    # 處理 pip install
+    if args.startswith("pip"):
+        rest = args[len("pip"):].strip()
+        if rest.startswith("install"):
+            rest = rest[len("install"):].strip()
+        if not rest:
+            return "用法: /admin pip install <包名>\n例：/admin pip install requests"
+        # 生成確認碼
+        token = generate_token(chat_id, "pip_install", rest)
+        pending_confirmations[token] = {
+            "cmd": "pip_install",
+            "args": rest,
+            "chat_id": chat_id,
+            "timestamp": time.time()
+        }
+        return f"⚠️ 危險操作 ⚠️\n[pip 安裝：`{rest}`]\n請在30秒內回覆確認碼：\n<pre>/admin confirm {token}</pre>"
+
+    # 處理 ollama_rm
+    if args.startswith("ollama_rm"):
         parts = args.split()
         if len(parts) < 2:
             return "用法: /admin ollama_rm 模型名稱"
-
         model_name = parts[1]
-
-        # 檢查模型是否正在運行
         if is_model_running(model_name):
-            return f"⛔ 錯誤：模型 {model_name} 正在使用中，無法刪除。請先停止所有使用該模型的應用。"
+            return f"⛔ 錯誤：模型 {model_name} 正在使用中，無法刪除。請先停止使用該模型的應用。"
+        token = generate_token(chat_id, "ollama_rm", model_name)
+        pending_confirmations[token] = {
+            "cmd": "ollama_rm",
+            "args": model_name,
+            "chat_id": chat_id,
+            "timestamp": time.time()
+        }
+        return f"⚠️ 危險操作 ⚠️\n[刪除模型：`{model_name}]`\n請在30秒內發送以下命令以確認：\n<pre>/admin confirm {token}</pre>"
 
-        try:
-            result = subprocess.run(
-                f"ollama rm {model_name}", shell=True,
-                capture_output=True, text=True, timeout=60
-            )
-            if result.returncode == 0:
-                return f"✅ 模型 {model_name} 已刪除。"
-            else:
-                return f"❌ 刪除失敗: {result.stderr}"
-        except Exception as e:
-            return f"❌ 執行失敗: {e}"
+    return f"未知管理命令: {args}\n發送 /admin 查看可用命令。"
 
-    else:
-        return f"未知管理命令: {args}\n發送 /admin 查看可用命令。"
+

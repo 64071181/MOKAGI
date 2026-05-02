@@ -1,5 +1,6 @@
-# 自製工具
+# "updata":"202605030048"
 
+# 自製工具
 
     tools
       |
@@ -9,23 +10,11 @@
 
 ## 下載工具 (cmd)
 
-    #!/usr/bin/env bash
-    PROJECT_DIR=~/.MokAgi
-    PLUGIN_DIR="${PROJECT_DIR}/tools"
-    mkdir -p "${PLUGIN_DIR}"
-    
-    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/tools/eaxmplo.py -o "${PLUGIN_DIR}/eaxmplo.py"
-    
-    # 安裝依賴
-    ### {如有需要}
-    
-    # 加載
-    echo "✅ eaxmplo 已安裝！請在 Telegram 發送 /reload 啟用。"
-
+    curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/tools/eaxmplo.py -o "~/.MokAgi/tools/eaxmplo.py"
 
 ===
 
-## eaxmplo.py 
+## eaxmplo.py
 
     PLUGIN_INFO = {
         "command": "/eaxmplo",
@@ -40,3 +29,20 @@
     }
 
     # ================== python code ===================
+
+    # if need pip install
+    try:
+        import chromadb
+        print("chromadb 已安装，版本：", chromadb.__version__)
+    except ImportError:
+        msg = (
+                    "❌ need pip install：`chromadb`、`sentence-transformers`\n\n"
+                    "請使用以下命令安裝（需要管理員權限）：\n"
+                    "<pre>/admin pip install chromadb sentence-transformers</pre>\n\n"
+                    "發送後會要求二次確認，輸入確認碼即可自動安裝。"
+                )
+        return msg
+
+    # ================== python code ===================
+
+

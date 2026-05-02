@@ -3,7 +3,7 @@ PLUGIN_INFO = {
     "icon":"🧩",
     "description": "自然語言意圖辨識 (自動轉換指令，支援動態新增外掛)",
     "handler": "dummy_handler",
-    "update": "202605010257"
+    "update": "202605030048"
 }
 
 
@@ -210,3 +210,5 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
 
 def dummy_handler(args: str, chat_id: str = None):
     return "請使用自然語言觸發意圖辨識，例如「記得我喜歡喝咖啡」"
+
+

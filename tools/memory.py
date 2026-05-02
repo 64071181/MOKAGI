@@ -1,30 +1,3 @@
-'''
-#!/usr/bin/env bash
-PROJECT_DIR=~/.MokAgi
-PLUGIN_DIR="${PROJECT_DIR}/tools"
-mkdir -p "${PLUGIN_DIR}"
-
-# curl -sL https://raw.githubusercontent.com/64071181/MokAgi/refs/heads/main/tools/memory.py -o "${PLUGIN_DIR}/memory.py"
-
-cat > "${BOT_SCRIPT}" << PYEOF
-# ....
-if __name__ == "__main__":
-    main()
-PYEOF
-
-
-# 安裝依賴
-pip install chromadb
-pip install chromadb sentence-transformers
-# 加載
-echo "✅ memory.py 已安裝！請在 Telegram 發送 /reload 啟用。"
-
-
-'''
-
-
-
-
 
 PLUGIN_INFO = {
     "command": "/memory",
@@ -32,31 +5,17 @@ PLUGIN_INFO = {
     "description": "長期記憶 (remember, recall, list, forgetall)",
     "handler": "handle_memory",
     "intent_keywords": [
-        ("重建知識庫", "/memory rebuild_kb"),
+        ("更新知識", "/memory rebuild_kb"),
 
-        ("列出知識庫", "/memory list_kb"),
-        ("知識庫列表", "/memory list_kb"),
-        ("顯示知識庫", "/memory list_kb"),
+        ("顯示知識", "/memory list_kb"),
 
         ("記住", "/memory remember"),
-        ("記得", "/memory remember"),
-        ("儲存", "/memory remember"),
-        ("保存", "/memory remember"),
 
         ("之前", "/memory recall"),
-        ("我說過", "/memory recall"),
-        ("找出", "/memory recall"),
 
-        ("列出記憶", "/memory list"),
-        ("所有記憶", "/memory list"),
-        ("顯示記憶", "/memory list"),
-
-        ("忘記所有", "/memory forgetall"),
-        ("清空記憶", "/memory forgetall"),
-        ("刪除所有記憶", "/memory forgetall")
-
+        ("回憶", "/memory list"),
     ],
-    "updata":"202605021229"
+    "updata":"202605030048"
 }
 
 
@@ -74,9 +33,38 @@ import logging, os, re
 import chromadb
 from chromadb.config import Settings
 import hashlib
+from chromadb.utils import embedding_functions
+
+
+
+
+
+
+
+
+
+
+
+
 
 # agent 名稱
 agent_name = os.environ.get("AD_AGENT_NAME", "default")
+def sanitize_name_for_chromadb(raw_name: str) -> str:
+    """將名稱轉換為符合 ChromaDB 規範的字串：只保留 a-z0-9._-，且首尾為字母數字"""
+    # 先將原文轉為小寫，並用底線取代非法字元
+    sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
+    # 若開頭不是字母數字，強制加上 'c_'
+    if sanitized and not sanitized[0].isalnum():
+        sanitized = 'c_' + sanitized
+    if sanitized and not sanitized[-1].isalnum():
+        sanitized = sanitized + '_c'
+    # 避免長度過短
+    if len(sanitized) < 3:
+        sanitized = sanitized + '___'
+    # 限制最長 512
+    return sanitized[:512]
+
+safe_agent_name = sanitize_name_for_chromadb(agent_name)
 
 # 明確指定數據存儲路徑
 CHROMA_PATH = os.path.join(os.path.expanduser("~"), ".MokAgi", "chroma_data")
@@ -84,36 +72,43 @@ KNOWLEDGE_DIR = os.path.expanduser(f"~/.MokAgi/{agent_name}")
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------- 新增：Embedding 支援 ----------
 try:
     from sentence_transformers import SentenceTransformer
-    _embedding_model = None
-    def get_embedding_model():
-        global _embedding_model
-        if _embedding_model is None:
-            _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        return _embedding_model
+    from chromadb.utils import embedding_functions
     EMBED_AVAILABLE = True
 except ImportError:
     EMBED_AVAILABLE = False
     logging.warning("sentence-transformers 未安裝，知識庫功能將不可用")
 
-# ---------- 自定義 Embedding 函數（供 ChromaDB 使用）----------
-class EmbeddingFunction:
-    def __call__(self, input):
-        model = get_embedding_model()
-        return model.encode(input).tolist()
-
-embed_fn = EmbeddingFunction() if EMBED_AVAILABLE else None
+# 使用 ChromaDB 官方的 SentenceTransformer 嵌入函數（自動處理模型下載與調用）
+if EMBED_AVAILABLE:
+    embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+else:
+    embed_fn = None
 
 # ---------- ChromaDB 初始化（保留原有 collection）----------
 try:
     _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
-    _collection = _client.get_or_create_collection(name=f"{agent_name}_user_memory")   # 使用者記憶
+    _collection = _client.get_or_create_collection(name=f"{safe_agent_name}_user_memory")   # 使用者記憶
     # 新增：知識庫 collection（獨立，使用 embedding）
     if EMBED_AVAILABLE:
         _kb_collection = _client.get_or_create_collection(
-            name=f"{agent_name}_room",
+            name=f"{safe_agent_name}_room",
             embedding_function=embed_fn
         )
     else:
@@ -131,7 +126,7 @@ def _col():
             path=CHROMA_PATH,
             settings=Settings(anonymized_telemetry=False)
         )
-        _collection = _client.get_or_create_collection(name=f"{agent_name}_user_memory")
+        _collection = _client.get_or_create_collection(name=f"{safe_agent_name}_user_memory")
     return _collection
 
 # ---------- 新增：知識庫切塊函數（按標題 + 長度限制）----------
@@ -257,23 +252,52 @@ async def recall_memory(chat_id: int, query: str, n_results: int = 1, include_kb
     return "\n\n".join(parts) if parts else ""
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ---------- 原 handle_memory 保持不變，僅新增 rebuild_kb 分支 ----------
 def handle_memory(args: str, chat_id: str = None):
     if MISSING_DEPS:
-        return "❌ 記憶工具缺少依賴，請在終端執行：\npip install chromadb sentence-transformers"
+        msg = (
+            "❌ 記憶工具缺少必要套件：`chromadb`、`sentence-transformers`\n\n"
+            "請使用以下命令安裝（需要管理員權限）：\n"
+            "<pre>/admin pip install chromadb sentence-transformers</pre>\n\n"
+            "發送後會要求二次確認，輸入確認碼即可自動安裝。"
+        )
+        return msg
     if chat_id is None:
         return "❌ 無法識別使用者。"
 
     args = args.strip()
     if not args:
-        help_text = '''
+        help_text = f'''
 
 📚 知識庫使用說明：
-    (在 MokAgi 目錄下建立 agent_name 目錄，並放入 .md 檔案。)
+    (在 MokAgi 目錄下建立 {agent_name} 資料夾，並放入 .md 檔案。)
 
-    重建知識庫<pre>/memory rebuild_kb</pre>
+    更新知識庫<pre>/memory rebuild_kb</pre>
 
-    列出知識庫區塊<pre>/memory list_kb</pre>
+    顯示知識庫<pre>/memory list_kb</pre>
 =====
 🧠 長期記憶使用說明：
     (使用下方按鈕快速操作，或直接輸入命令)
@@ -290,8 +314,6 @@ def handle_memory(args: str, chat_id: str = None):
     刪除記憶<pre>/memory delete 序號</pre>
 
     忘記所有記憶<pre>/memory forgetall</pre>
-
-
 
 =====
 🧩 自然語言意圖辨識：
@@ -313,27 +335,21 @@ def handle_memory(args: str, chat_id: str = None):
         if subcmd == "remember":
             if not content:
                 return "用法: /memory remember 內容\n  例：/memory remember 我喜歡喝咖啡\n\n"
-            # ----- 新增：人稱標準化（將用戶對自己的描述轉為無歧義的第三人稱）-----
+            # ----- 新增：人稱標準化 -----
             normalized = content
             # 移除開頭的「記得」或「記住」
-            normalized = re.sub(r'^(?:記得|記住)\s*', '', normalized)
-            # 將「我是」→「用戶的」
-            normalized = re.sub(r'我是', '用戶是', normalized)
-            # 將「我叫」→「用戶名字是」
-            normalized = re.sub(r'我叫', '用戶叫', normalized)
-            # 將「我」單獨（非「我的」）→「用戶」
-            normalized = re.sub(r'\b我\b', '用戶', normalized)
-            # 將「你/妳」→「助手」（如果用戶提到了助手）
-            normalized = re.sub(r'你|妳', '我', normalized)
-            # 可選：將「我的」→「用戶的」
-            normalized = re.sub(r'我的', '用戶的', normalized)
+            normalized = re.sub(r'^(?:記住)\s*', '', normalized)
+            # 將「我」→「主人」
+            normalized = re.sub(r'我', '主人', normalized)
+            # 將「你/妳」→「agent_name」
+            normalized = re.sub(r'你|妳', safe_agent_name, normalized)
             # ------------------------------------------------------------------
             col.add(
                 documents=[normalized],
                 metadatas=[{"chat_id": chat_id}],
                 ids=[f"{chat_id}_{col.count()}"]
             )
-            return f"✅ 已記住（標準化為：{normalized}）"
+            return f"✅ 已記住 [{normalized}]"
 
         elif subcmd == "recall":
             if not content:
@@ -445,65 +461,6 @@ def handle_memory(args: str, chat_id: str = None):
     except Exception as e:
         logging.error(f"記憶工具錯誤: {e}")
         return f"❌ 記憶操作失敗: {e}"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
