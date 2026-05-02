@@ -35,20 +35,17 @@ from chromadb.config import Settings
 import hashlib
 from chromadb.utils import embedding_functions
 
-
-
-
-
-
-
-
-
-
-
-
-
 # agent 名稱
+mokagi_name = os.environ.get("AD_AgiName")
 agent_name = os.environ.get("AD_AGENT_NAME", "default")
+
+
+
+
+
+
+
+
 def sanitize_name_for_chromadb(raw_name: str) -> str:
     """將名稱轉換為符合 ChromaDB 規範的字串：只保留 a-z0-9._-，且首尾為字母數字"""
     # 先將原文轉為小寫，並用底線取代非法字元
@@ -67,8 +64,8 @@ def sanitize_name_for_chromadb(raw_name: str) -> str:
 safe_agent_name = sanitize_name_for_chromadb(agent_name)
 
 # 明確指定數據存儲路徑
-CHROMA_PATH = os.path.join(os.path.expanduser("~"), ".MokAgi", "chroma_data")
-KNOWLEDGE_DIR = os.path.expanduser(f"~/.MokAgi/{agent_name}")
+CHROMA_PATH = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", "chroma_data")
+KNOWLEDGE_DIR = os.path.expanduser(f"~/.{mokagi_name}/{agent_name}")
 
 
 
@@ -293,7 +290,7 @@ def handle_memory(args: str, chat_id: str = None):
         help_text = f'''
 
 📚 知識庫使用說明：
-    (在 MokAgi 目錄下建立 {agent_name} 資料夾，並放入 .md 檔案。)
+    (在 {mokagi_name} 目錄下建立 {agent_name} 資料夾，並放入 .md 檔案。)
 
     更新知識庫<pre>/memory rebuild_kb</pre>
 

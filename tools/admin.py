@@ -23,7 +23,8 @@ import time
 import hashlib
 
 
-
+mokagi_name = os.environ.get("AD_AgiName")
+agent_name = os.environ.get("AD_AGENT_NAME")
 
 
 
@@ -150,7 +151,7 @@ def handle_admin(args: str, chat_id: str = None) -> str:
     logging.info(f"Admin plugin invoked: args='{args}', chat_id={chat_id}")
     args = args.strip()
     if not args:
-        help_text = '''
+        help_text = f'''
 🤖 管理命令：
 
     查看系統負載<pre>/admin htop</pre>
@@ -161,7 +162,7 @@ def handle_admin(args: str, chat_id: str = None) -> str:
 
     刪除指定模型<pre>/admin ollama_rm 模型名</pre>
 
-    查看 MokAgi 日誌 (預設15行)<pre>/admin logs 行數</pre>
+    查看 {mokagi_name}_{agent_name} 日誌 (預設15行)<pre>/admin logs 行數</pre>
 
     安裝 Python 套件<pre>/admin pip install 包名</pre>
 
@@ -216,8 +217,7 @@ def handle_admin(args: str, chat_id: str = None) -> str:
         lines = args.split()
         num = lines[1] if len(lines) > 1 and lines[1].isdigit() else 15
         try:
-            mokagi_name = os.environ.get("AD_AgiName")
-            agent_name = os.environ.get("AD_AGENT_NAME")
+            
 
             result = subprocess.run(
                 f"pm2 logs {mokagi_name}_{agent_name} --lines {num} --nostream --raw", shell=True,
