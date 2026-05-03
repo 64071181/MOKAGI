@@ -2,7 +2,7 @@
 
 #!/usr/bin/env bash
 # "start":"202604231241"
-# "updata":"202605031933"
+# "updata":"202605040059"
 # ==============================================
 # ==============================================
 # ================== 基礎設定 ===================
@@ -14,7 +14,7 @@
 
 
 set -o pipefail # 讓管道中任何一個命令失敗都會導致整個指令碼失敗
-MokAgiName="MokAgi" # 專案名稱，影響資料夾和日誌命名
+MokAgiName="MokAgi7" # 專案名稱，影響資料夾和日誌命名
 PROJECT_DIR="${HOME}/.${MokAgiName}"   # 專案根目錄，存放機器人指令碼和 .env 等檔案
 BOT_SCRIPT="${PROJECT_DIR}/${MokAgiName}.py" # 機器人執行主指令碼
 
@@ -83,7 +83,7 @@ if [ ${#valid_configs[@]} -eq 0 ]; then
     
     # 生成配置文件，其中 AGENT_NAME 設為用戶輸入的名稱
     cat > "${ENV_FILE}" << 'ENV_TEMPLATE'
-# MokAgi 環境變量配置（請填寫你的信息）
+# ${MokAgiName} 環境變量配置（請填寫你的信息）
 # 注意：等號前後不要加空格 " '
 
 # agent名稱
@@ -141,7 +141,7 @@ MOK_NUM_THREADS=2
 # Ollama 允許的最大 CPU 執行緒數，根據你的 CPU 核心數調整(如 2、4、8）
 
 # ================== 模型固定臺詞 ===================
-MOK_start_msg=🎉 MokAgi 已成功部署並24小時在線！
+MOK_start_msg=🎉 ${MokAgiName} 已成功部署並24小時在線！
 MOK_welcome_msg=你好！我是有記憶的 AI 助手。
 MOK_unAllowed_msg=您未獲得使用權限。
 
@@ -305,7 +305,7 @@ fi
 
 # ================== 模型固定臺詞 ===================
 if [ -z "${MOK_start_msg}" ]; then
-    MOK_start_msg="🎉 MokAgi 已成功部署並24小時在線！。"
+    MOK_start_msg="🎉 ${MokAgiName} 已成功部署並24小時在線！。"
 fi
 if [ -z "${MOK_welcome_msg}" ]; then
     MOK_welcome_msg="你好！我是有記憶的 AI 助手。"
@@ -449,37 +449,45 @@ echo -e " [5/8] 生成機器人執行主指令碼... "
 echo -e "==========================================${NC}"
 rm -f "${BOT_SCRIPT}"
 cat > "${BOT_SCRIPT}" << PYEOF
-import asyncio, logging, httpx, os, json, importlib.util, re
 
-# tools 用
-AD_AgiName = "${MokAgiName}"
-os.environ["AD_AgiName"] = AD_AgiName
-
-AD_AGENT_NAME = os.environ.get("AD_AGENT_NAME", "default")
-#os.environ["AD_AGENT_NAME"] = AD_AGENT_NAME
-
-def sanitize(s: str) -> str:
-    """只移除不可見字符，保留所有正常文字（中英文等）"""
-    # 移除零寬字符和 BOM
-    s = re.sub(r'[\u200b\u200c\u200d\u200e\u200f\ufeff]', '', s)
-    # 只刪除不可打印的控制字符（ASCII 0-31，除換行製表符外），保留所有可見文字
-    s = ''.join(ch for ch in s if ch.isprintable() or ch in ('\n', '\t'))
-    return s.strip()
-
+import asyncio, logging, httpx, os, json, importlib.util, re, sys
 from collections import defaultdict
 from telegram import Update, BotCommand
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_TOKEN = os.environ.get("TG_TOKEN", "")
-if not TELEGRAM_TOKEN:
-    raise RuntimeError("未找到 TG_TOKEN，請在 .env 中設定")
+# ================== 加载配置文件（唯一数据源）==================
+def load_agent_config():
+    agent_name = os.environ.get("AGENT_NAME")
+    if not agent_name:
+        proc_name = os.environ.get("PM2_PROGRAM_NAME") or sys.argv[0]
+        match = re.search(r'${MokAgiName}_(.+)$', proc_name)
+        agent_name = match.group(1) if match else "default"
+    mokagi_name = "${MokAgiName}"
+    config_path = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", f".{agent_name}")
+    if not os.path.exists(config_path):
+        raise RuntimeError(f"配置文件 {config_path} 不存在")
+    config = {}
+    with open(config_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' in line:
+                key, value = line.split('=', 1)
+                config[key.strip()] = value.strip()
+    return config, agent_name, mokagi_name
 
-# 主人/管理員 chat_id(用於傳送歡迎訊息）
-ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "").strip()
+config, AGENT_NAME, MOKAGI_NAME = load_agent_config()
+os.environ["AD_AGENT_NAME"] = AGENT_NAME
+os.environ["AD_AgiName"] = MOKAGI_NAME
 
-# 允許使用 bot 的使用者 chat_id 列表(逗號分隔）
-ALLOWED_USERS_STR = os.environ.get("ALLOWED_USERS", "")
+# 读取所有必要配置（带默认值）
+TG_TOKEN = config.get("TG_TOKEN")
+if not TG_TOKEN:
+    raise RuntimeError("配置文件中缺少 TG_TOKEN")
+ADMIN_CHAT_ID = config.get("ADMIN_CHAT_ID", "")
+ALLOWED_USERS_STR = config.get("ALLOWED_USERS", "")
 ALLOWED_USERS = set()
 if ALLOWED_USERS_STR:
     for uid in ALLOWED_USERS_STR.split(","):
@@ -487,21 +495,32 @@ if ALLOWED_USERS_STR:
         if uid:
             ALLOWED_USERS.add(int(uid) if uid.isdigit() else uid)
 
-OLLAMA_API = "${MOK_MODEL_api}"
-MOK_MODEL_NAME = "${MOK_MODEL_NAME}"
-MAX_HISTORY_ROUNDS = ${MOK_MAX_HISTORY_ROUNDS}      # 保留最近 6 輪對話
+OLLAMA_API = config.get("MOK_MODEL_api", "http://localhost:11434/api/generate")
+MOK_MODEL_NAME = config.get("MOK_MODEL_NAME", "qwen3:1.7b")
+MAX_HISTORY_ROUNDS = int(config.get("MOK_MAX_HISTORY_ROUNDS", 6))
+MEMORY_RECALL_COUNT = int(config.get("MOK_MEMORY_RECALL_COUNT", 3))
+MOK_num_ctx = int(config.get("MOK_num_ctx", 16384))
+MOK_num_predict = int(config.get("MOK_num_predict", 8192))
+MOK_temperature = float(config.get("MOK_temperature", 0.8))
+MOK_top_p = float(config.get("MOK_top_p", 0.9))
+MOK_top_k = int(config.get("MOK_top_k", 50))
+
+# 固定参数
 TIMEOUT = 300
 PLUGIN_DIR = os.path.join(os.path.dirname(__file__), "tools")
-GITHUB_TOOLS_REPO = "${GITHUB_TOOLS_REPO}"
+GITHUB_TOOLS_REPO = "https://github.com/64071181/MokAgi/tree/main/tools"
 
 logging.basicConfig(level=logging.INFO)
 
-# 每個使用者獨立的對話歷史:列表，每項為 {"user": "...", "assistant": "..."}
 user_histories = defaultdict(list)
-
 tools = {}
+
+def sanitize(s: str) -> str:
+    s = re.sub(r'[\u200b\u200c\u200d\u200e\u200f\ufeff]', '', s)
+    s = ''.join(ch for ch in s if ch.isprintable() or ch in ('\n', '\t'))
+    return s.strip()
+
 def load_tools():
-    """動態載入外掛目錄下的所有 .py 檔案"""
     global tools
     tools = {}
     if not os.path.isdir(PLUGIN_DIR):
@@ -519,68 +538,53 @@ def load_tools():
                 logging.error(f"載入外掛 {module_name} 失敗: {e}")
 
 def get_plugin_commands():
-    """掃描外掛，返回命令 -> 處理函式 的對映"""
     cmd_map = {}
-    for name, mod in tools.items():
+    for mod in tools.values():
         if hasattr(mod, "PLUGIN_INFO"):
             info = mod.PLUGIN_INFO
             cmd_map[info["command"]] = getattr(mod, info["handler"], None)
     return cmd_map
 
-
-
-def build_prompt(hist: list, new_msg: str) -> str:
-    """構建包含歷史的多輪 prompt"""
+def build_prompt(hist, new_msg):
     prompt = "以下是一個友好的中文助手和使用者的對話:\n\n"
     for h in hist:
-        prompt += f"使用者:{h['user']}\n{AD_AGENT_NAME}:{h['assistant']}\n"
-    prompt += f"使用者:{new_msg}\n{AD_AGENT_NAME}:"
+        prompt += f"使用者:{h['user']}\n{AGENT_NAME}:{h['assistant']}\n"
+    prompt += f"使用者:{new_msg}\n{AGENT_NAME}:"
     return prompt
 
-async def query_ollama(chat_id: int, user_text: str) -> str:
+async def query_ollama(chat_id, user_text):
     hist = user_histories[chat_id]
-
-    # 自動記憶檢索
-    memory_recall_count = int(os.environ.get("MOK_MEMORY_RECALL_COUNT", "1"))
     memory_context = ""
     if "memory" in tools and hasattr(tools["memory"], "recall_memory"):
         try:
-            # 每次都同時檢索知識庫與使用者記憶
             recalled = await tools["memory"].recall_memory(
-                chat_id, user_text, memory_recall_count, include_kb=True
+                chat_id, user_text, MEMORY_RECALL_COUNT, include_kb=True
             )
             if recalled:
                 memory_context = f"【相關記憶與知識】\n{recalled}\n\n"
         except Exception as e:
             logging.warning(f"記憶檢索失敗: {e}")
-
     prompt = memory_context + build_prompt(hist, user_text)
-
     payload = {
         "model": MOK_MODEL_NAME,
         "prompt": prompt,
         "stream": False,
         "options": {
-            "num_ctx": ${MOK_num_ctx},
-            "num_predict": ${MOK_num_predict},
-            "temperature": ${MOK_temperature},
-            "top_p": ${MOK_top_p},
-            "top_k": ${MOK_top_k},
+            "num_ctx": MOK_num_ctx,
+            "num_predict": MOK_num_predict,
+            "temperature": MOK_temperature,
+            "top_p": MOK_top_p,
+            "top_k": MOK_top_k,
         }
     }
-
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         try:
             resp = await client.post(OLLAMA_API, json=payload)
             resp.raise_for_status()
             data = resp.json()
             reply = data.get("response", "").strip()
-
-            # 清理可能的思考過程殘留
             if reply.startswith("Thinking Process:") or reply.startswith("{"):
-                # 如果模型吐出奇怪內容，回退提示
                 reply = "抱歉，我一時沒理解你的意思，請再說一遍。"
-
             if reply:
                 hist.append({"user": user_text, "assistant": reply})
                 if len(hist) > MAX_HISTORY_ROUNDS:
@@ -592,29 +596,24 @@ async def query_ollama(chat_id: int, user_text: str) -> str:
             logging.error(f"Ollama error: {e}")
             return "❌ 呼叫失敗，請稍後重試。"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("${MOK_welcome_msg}")
+async def start(update, context):
+    await update.message.reply_text(config.get("MOK_welcome_msg", "你好！我是有記憶的 AI 助手。"))
 
-async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def clear_command(update, context):
     chat_id = update.message.chat_id
     user_histories[chat_id] = []
     await update.message.reply_text("記憶已清除，我們重新開始。")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update, context):
     user_text = update.message.text
     chat_id = update.message.chat_id
-    # 如果設定了允許列表，且當前使用者不在列表中，則忽略(可選回覆提示）
     if ALLOWED_USERS and str(chat_id) not in map(str, ALLOWED_USERS):
-        await update.message.reply_text("${MOK_unAllowed_msg}")
+        await update.message.reply_text(config.get("MOK_unAllowed_msg", "您未獲得使用權限。"))
         return
-
     cmd_map = get_plugin_commands()
-
-    # 檢查是否為外掛命令
     for cmd, handler in cmd_map.items():
         if user_text == cmd or user_text.startswith(cmd + " "):
             args = user_text[len(cmd):].strip()
-            # 發送臨時訊息
             temp_msg = await update.message.reply_text(f"⏳ 正在執行 {cmd} ...")
             try:
                 result = handler(args, str(chat_id))
@@ -635,49 +634,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode='HTML'
                     )
                 else:
-                    await context.bot.edit_message_text(
-                        "✅ 完成",
-                        chat_id=temp_msg.chat_id,
-                        message_id=temp_msg.message_id
-                    )
+                    await context.bot.edit_message_text("✅ 完成", chat_id=temp_msg.chat_id, message_id=temp_msg.message_id)
             except Exception as e:
-                await context.bot.edit_message_text(
-                    f"❌ 外掛執行錯誤: {e}",
-                    chat_id=temp_msg.chat_id,
-                    message_id=temp_msg.message_id
-                )
+                await context.bot.edit_message_text(f"❌ 外掛執行錯誤: {e}", chat_id=temp_msg.chat_id, message_id=temp_msg.message_id)
             return
-
-    # 自然語言意圖處理
     if "intent" in tools and hasattr(tools["intent"], "handle_intent"):
         handled = await tools["intent"].handle_intent(
             update, context, user_text, chat_id, cmd_map, tools,
-            OLLAMA_API, MOK_MODEL_NAME   # 傳入主程式的 Ollama API 與模型名稱
+            OLLAMA_API, MOK_MODEL_NAME
         )
-        if handled: return
-
-
-    # 普通對話
+        if handled:
+            return
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
     reply = await query_ollama(chat_id, user_text)
-    if len(reply) > 4000:
-        for i in range(0, len(reply), 4000):
-            await update.message.reply_text(reply[i:i+4000])
-    else:
-        await update.message.reply_text(reply)
-
+    await update.message.reply_text(reply)
 
 async def update_bot_commands(app):
-    """根據已安裝外掛動態更新 TG 命令選單"""
     base_commands = [
         BotCommand(sanitize("start"), sanitize("開始對話")),
         BotCommand(sanitize("clear"), sanitize("清除會話記憶")),
         BotCommand(sanitize("tools"), sanitize("工具箱")),
         BotCommand(sanitize("reload"), sanitize("更新")),
     ]
-
     plugin_commands = []
-    for name, mod in tools.items():
+    for mod in tools.values():
         if hasattr(mod, "PLUGIN_INFO"):
             info = mod.PLUGIN_INFO
             cmd = sanitize(info["command"]).lstrip("/")
@@ -685,58 +665,41 @@ async def update_bot_commands(app):
             if cmd and desc:
                 plugin_commands.append(BotCommand(cmd, desc))
     await app.bot.set_my_commands(base_commands + plugin_commands)
-    print(f"✅ 已同步 {len(base_commands) + len(plugin_commands)} 個命令")
 
-
-async def tools_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tools_command(update, context):
     text = "🧰 **已安裝的工具:**\n"
-    plugin_count = 0
-    for name, mod in tools.items():
+    for mod in tools.values():
         if hasattr(mod, "PLUGIN_INFO"):
             info = mod.PLUGIN_INFO
             text += f"  {info['command']} — {info['description']}\n"
-            plugin_count += 1
-    if plugin_count == 0:
-        text += "  暫無已安裝的工具。\n"
     text += f"\n ➕  [增加工具]({sanitize(GITHUB_TOOLS_REPO)})"
     await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
 
-async def reload_tools_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """已更新所有工具及新命令菜單"""
-    # 重新加載工具
+async def reload_tools_command(update, context):
     global tools
     tools = {}
     load_tools()
-
-    # 動態刷新 TG 命令菜單
     await update_bot_commands(context.application)
-
-    # 通知用戶
-    new_count = len(get_plugin_commands())
-    await update.message.reply_text(f"✅ 工具已加載，當前共有 {new_count} 個工具命令。")
+    await update.message.reply_text(f"✅ 工具已加載，當前共有 {len(get_plugin_commands())} 個工具命令。")
 
 async def send_welcome(app):
     if ADMIN_CHAT_ID:
         try:
-            await app.bot.send_message(
-                chat_id=ADMIN_CHAT_ID,
-                text="${MOK_start_msg}"
-            )
+            await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=config.get("MOK_start_msg", "🎉 ${MokAgiName} 已成功部署並24小時在線！"))
         except Exception as e:
             logging.warning(f"無法傳送歡迎訊息給 {ADMIN_CHAT_ID}: {e}")
 
 def main():
     load_tools()
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = ApplicationBuilder().token(TG_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("tools", tools_command))
     app.add_handler(CommandHandler("reload", reload_tools_command))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     asyncio.get_event_loop().run_until_complete(update_bot_commands(app))
-    # 傳送歡迎訊息
     asyncio.get_event_loop().run_until_complete(send_welcome(app))
-    print("✅ ${AGENT_NAME} 啟動中... 傳送 /clear 可清空對話歷史")
+    print(f"✅ {AGENT_NAME} 啟動中... 傳送 /clear 可清空對話歷史")
     app.run_polling()
 
 if __name__ == "__main__":
@@ -800,19 +763,9 @@ fi
 
 
 
-export AD_AGENT_NAME="${AGENT_NAME}"
-export AD_AgiName="${MokAgiName}"
-export TG_TOKEN="${TG_TOKEN}"
-export ADMIN_CHAT_ID="${ADMIN_CHAT_ID}"
-export ALLOWED_USERS="${ALLOWED_USERS}"
-export MOK_MODEL_NAME="${MOK_MODEL_NAME}"
-export MOK_MODEL_api="${MOK_MODEL_api}"
-export MOK_MEMORY_RECALL_COUNT="${MOK_MEMORY_RECALL_COUNT}"
 
-
+export AGENT_NAME="${AGENT_NAME}"
 pm2 delete ${MokAgiName}_${AGENT_NAME} 2>/dev/null || true
-
-
 pm2 start "${BOT_SCRIPT}" \
     --name ${MokAgiName}_${AGENT_NAME} \
     --interpreter python3 \
