@@ -532,8 +532,8 @@ def build_prompt(hist: list, new_msg: str) -> str:
     """構建包含歷史的多輪 prompt"""
     prompt = "以下是一個友好的中文助手和使用者的對話:\n\n"
     for h in hist:
-        prompt += f"使用者:{h['user']}\n{AD_AgiName}:{h['assistant']}\n"
-    prompt += f"使用者:{new_msg}\n{AD_AgiName}:"
+        prompt += f"使用者:{h['user']}\n{AD_AGENT_NAME}:{h['assistant']}\n"
+    prompt += f"使用者:{new_msg}\n{AD_AGENT_NAME}:"
     return prompt
 
 async def query_ollama(chat_id: int, user_text: str) -> str:
