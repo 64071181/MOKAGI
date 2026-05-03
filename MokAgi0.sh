@@ -10,11 +10,11 @@
 # ==============================================
 
 # 先刪除舊的資料夾(如果有的話）
-# rm -rf ~/.MokAgi3
+# rm -rf ~/.MokAgi
 
 
 set -o pipefail # 讓管道中任何一個命令失敗都會導致整個指令碼失敗
-MokAgiName="MokAgi3" # 專案名稱，影響資料夾和日誌命名
+MokAgiName="MokAgi" # 專案名稱，影響資料夾和日誌命名
 PROJECT_DIR="${HOME}/.${MokAgiName}"   # 專案根目錄，存放機器人指令碼和 .env 等檔案
 BOT_SCRIPT="${PROJECT_DIR}/${MokAgiName}.py" # 機器人執行主指令碼
 
