@@ -47,19 +47,12 @@ agent_name = os.environ.get("AD_AGENT_NAME", "default")
 
 
 def sanitize_name_for_chromadb(raw_name: str) -> str:
-    """將名稱轉換為符合 ChromaDB 規範的字串：只保留 a-z0-9._-，且首尾為字母數字"""
-    # 先將原文轉為小寫，並用底線取代非法字元
-    sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', raw_name)
-    # 若開頭不是字母數字，強制加上 'c_'
-    if sanitized and not sanitized[0].isalnum():
-        sanitized = 'c_' + sanitized
-    if sanitized and not sanitized[-1].isalnum():
-        sanitized = sanitized + '_c'
-    # 避免長度過短
-    if len(sanitized) < 3:
-        sanitized = sanitized + '___'
-    # 限制最長 512
-    return sanitized[:512]
+    """使用哈希生成唯一且合规的 ChromaDB collection 名称"""
+    import hashlib
+    # 用 MD5 哈希确保不同名称生成不同字符串（长度固定，只含十六进制字符）
+    hash_hex = hashlib.md5(raw_name.encode()).hexdigest()[:16]
+    # 确保首字符为字母（ChromaDB 要求）
+    return f"agent_{hash_hex}"
 
 safe_agent_name = sanitize_name_for_chromadb(agent_name)
 
@@ -206,7 +199,7 @@ def rebuild_knowledge_base():
                 ids=[doc_id]
             )
             count += 1
-    return f"✅ 知識庫重建完成，共導入 {count} 個記憶塊（按標題分塊）。"
+    return f"✅ 知識庫重建完成，共導入 {count} 個記憶塊（按標題分塊）。 (collection: {safe_agent_name}_room)"
 
 
 # ---------- 修改 recall_memory 支援知識庫檢索 ----------
@@ -346,7 +339,7 @@ def handle_memory(args: str, chat_id: str = None):
                 metadatas=[{"chat_id": chat_id}],
                 ids=[f"{chat_id}_{col.count()}"]
             )
-            return f"✅ 已記住 [{normalized}]"
+            return f"✅ 已記住 [{normalized}] (collection: {safe_agent_name}_user_memory)"
 
         elif subcmd == "recall":
             if not content:
