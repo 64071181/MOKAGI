@@ -2,7 +2,7 @@
 
 #!/usr/bin/env bash
 # "start":"202604231241"
-# "updata":"202605030048"
+# "updata":"202605031933"
 # ==============================================
 # ==============================================
 # ================== 基礎設定 ===================
@@ -10,11 +10,11 @@
 # ==============================================
 
 # 先刪除舊的資料夾(如果有的話）
-# rm -rf ~/.MokAgi/溟
+# rm -rf ~/.MokAgi3
 
 
 set -o pipefail # 讓管道中任何一個命令失敗都會導致整個指令碼失敗
-MokAgiName="MokAgi" # 專案名稱，影響資料夾和日誌命名
+MokAgiName="MokAgi3" # 專案名稱，影響資料夾和日誌命名
 PROJECT_DIR="${HOME}/.${MokAgiName}"   # 專案根目錄，存放機器人指令碼和 .env 等檔案
 BOT_SCRIPT="${PROJECT_DIR}/${MokAgiName}.py" # 機器人執行主指令碼
 
@@ -454,8 +454,9 @@ import asyncio, logging, httpx, os, json, importlib.util, re
 # tools 用
 AD_AgiName = "${MokAgiName}"
 os.environ["AD_AgiName"] = AD_AgiName
-AD_AGENT_NAME = "${AGENT_NAME}"
-os.environ["AD_AGENT_NAME"] = AD_AGENT_NAME
+
+AD_AGENT_NAME = os.environ.get("AD_AGENT_NAME", "default")
+#os.environ["AD_AGENT_NAME"] = AD_AGENT_NAME
 
 def sanitize(s: str) -> str:
     """只移除不可見字符，保留所有正常文字（中英文等）"""
@@ -795,14 +796,27 @@ if ! command -v pm2 &> /dev/null; then
     sudo apt-get install -y nodejs
     sudo npm install -g pm2
 fi
+
+
+
+
+export AD_AGENT_NAME="${AGENT_NAME}"
+export AD_AgiName="${MokAgiName}"
+export TG_TOKEN="${TG_TOKEN}"
+export ADMIN_CHAT_ID="${ADMIN_CHAT_ID}"
+export ALLOWED_USERS="${ALLOWED_USERS}"
+export MOK_MODEL_NAME="${MOK_MODEL_NAME}"
+export MOK_MODEL_api="${MOK_MODEL_api}"
+export MOK_MEMORY_RECALL_COUNT="${MOK_MEMORY_RECALL_COUNT}"
+
+
 pm2 delete ${MokAgiName}_${AGENT_NAME} 2>/dev/null || true
+
+
 pm2 start "${BOT_SCRIPT}" \
     --name ${MokAgiName}_${AGENT_NAME} \
     --interpreter python3 \
-    --cwd "${PROJECT_DIR}" \
-    --env TG_TOKEN="${TG_TOKEN}" \
-    --env ADMIN_CHAT_ID="${ADMIN_CHAT_ID}" \
-    --env ALLOWED_USERS="${ALLOWED_USERS}"
+    --cwd "${PROJECT_DIR}"
 pm2 save
 
 
