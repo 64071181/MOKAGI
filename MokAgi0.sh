@@ -59,15 +59,35 @@ mkdir -p "${toolsUrl}"
 
 cd "${PROJECT_DIR}"
 
-# ================== 檢查並準備 .env ===================
-if [ ! -f "${ENV_FILE}" ]; then
-    # .env 不存在，手動生成一個最小模板
+# ================== 檢查並準備環境配置文件 ===================
+# 列出所有符合的設定檔（以點開頭，但不是 .env 也不是 .. 或 .）
+shopt -s dotglob
+configs=( "${PROJECT_DIR}"/.[!.]* )
+shopt -u dotglob
+valid_configs=()
+for cfg in "${configs[@]}"; do
+    [[ -f "$cfg" && "$(basename "$cfg")" != ".env" ]] && valid_configs+=("$cfg")
+done
+
+if [ ${#valid_configs[@]} -eq 0 ]; then
+    # 沒有任何現有設定檔 → 請使用者輸入新 agent 名稱
+    echo -e "${YELLOW}請輸入此 Agent 的名稱（例如：溟、沐、sam）:${NC}"
+    read -p "Agent 名稱: " AGENT_NAME_INPUT
+    AGENT_NAME_INPUT=$(echo "$AGENT_NAME_INPUT" | xargs | cut -c1-32)
+    if [ -z "$AGENT_NAME_INPUT" ]; then
+        AGENT_NAME_INPUT="default"
+    fi
+    # 配置文件名稱改為 .<agent名稱>
+    ENV_FILE="${PROJECT_DIR}/.${AGENT_NAME_INPUT}"
+    echo -e "${GREEN}將創建配置文件：${ENV_FILE}${NC}"
+    
+    # 生成配置文件，其中 AGENT_NAME 設為用戶輸入的名稱
     cat > "${ENV_FILE}" << 'ENV_TEMPLATE'
 # MokAgi 環境變量配置（請填寫你的信息）
 # 注意：等號前後不要加空格 " '
 
 # agent名稱
-AGENT_NAME=您助手的名字
+AGENT_NAME=__AGENT_NAME_PLACEHOLDER__
 
 # Telegram Bot Token
 TG_TOKEN=你的Bot_Token
@@ -126,6 +146,10 @@ MOK_welcome_msg=你好！我是有記憶的 AI 助手。
 MOK_unAllowed_msg=您未獲得使用權限。
 
 ENV_TEMPLATE
+
+    # 替换占位符
+    sed -i "s/__AGENT_NAME_PLACEHOLDER__/${AGENT_NAME_INPUT}/g" "${ENV_FILE}"
+
     echo -e "${YELLOW}=========================================="
     echo -e "請先編輯 ${ENV_FILE}，填入你的 Telegram Bot Token 和 Chat ID。"
     echo -e "       nano ${ENV_FILE}"
@@ -137,6 +161,24 @@ ENV_TEMPLATE
     echo -e ""
     echo -e "==========================================${NC}"
     exit 0
+elif [ ${#valid_configs[@]} -eq 1 ]; then
+    # 只有一個設定檔，直接使用
+    ENV_FILE="${valid_configs[0]}"
+    echo -e "${GREEN}使用現有設定檔：${ENV_FILE}${NC}"
+else
+    # 多個設定檔，列出讓使用者選擇
+    echo -e "${YELLOW}發現多個設定檔：${NC}"
+    for i in "${!valid_configs[@]}"; do
+        echo "  $((i+1))) $(basename "${valid_configs[$i]}")"
+    done
+    read -p "請選擇要使用的設定檔編號: " cfg_choice
+    if [[ "$cfg_choice" =~ ^[0-9]+$ ]] && [ "$cfg_choice" -ge 1 ] && [ "$cfg_choice" -le ${#valid_configs[@]} ]; then
+        ENV_FILE="${valid_configs[$((cfg_choice-1))]}"
+        echo -e "${GREEN}選擇設定檔：${ENV_FILE}${NC}"
+    else
+        echo -e "${RED}無效選擇，退出。${NC}"
+        exit 1
+    fi
 fi
 # 清理 \r 字符並載入環境變量
 tr -d '\r' < "${ENV_FILE}" > "${ENV_FILE}.clean"
@@ -168,6 +210,8 @@ export $(grep -v '^#' "${ENV_FILE}" | xargs) 2>/dev/null
 if [ -z "${AGENT_NAME}" ]; then
     AGENT_NAME="ai助手"
 fi
+mkdir -p "${PROJECT_DIR}/${AGENT_NAME}" # 建立知識庫
+
 
 # ================== 檢查必填 Telegram Bot Token 是否已設置 ===================
 if [ -z "${TG_TOKEN}" ] || [ "${TG_TOKEN}" = "你的Bot_Token" ]; then
@@ -407,7 +451,7 @@ rm -f "${BOT_SCRIPT}"
 cat > "${BOT_SCRIPT}" << PYEOF
 import asyncio, logging, httpx, os, json, importlib.util, re
 
-# admin pm2 logs 用
+# tools 用
 AD_AgiName = "${MokAgiName}"
 os.environ["AD_AgiName"] = AD_AgiName
 AD_AGENT_NAME = "${AGENT_NAME}"
@@ -488,8 +532,8 @@ def build_prompt(hist: list, new_msg: str) -> str:
     """構建包含歷史的多輪 prompt"""
     prompt = "以下是一個友好的中文助手和使用者的對話:\n\n"
     for h in hist:
-        prompt += f"使用者:{h['user']}\n助手:{h['assistant']}\n"
-    prompt += f"使用者:{new_msg}\n助手:"
+        prompt += f"使用者:{h['user']}\n{AD_AgiName}:{h['assistant']}\n"
+    prompt += f"使用者:{new_msg}\n{AD_AgiName}:"
     return prompt
 
 async def query_ollama(chat_id: int, user_text: str) -> str:
