@@ -3,8 +3,27 @@ PLUGIN_INFO = {
     "icon":"🧩",
     "description": "自然語言意圖辨識 (自動轉換指令，支援動態新增外掛)",
     "handler": "dummy_handler",
-    "update": "202605030048"
+    "update": "202605031933"
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 import httpx
@@ -17,6 +36,20 @@ from typing import Dict, Any
 # 全域變數，由主程式透過鉤子傳入
 _cmd_map = {}
 _tools = {}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def build_keyword_map(cmd_map: dict, tools: dict) -> Dict[str, str]:
@@ -74,6 +107,20 @@ async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str, model_name: str) -> tuple:
     """使用 LLM 分類意圖，動態生成 prompt（通用版，不硬編碼任何工具）"""
     # 建立指令描述列表
@@ -126,6 +173,22 @@ async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str
     except Exception as e:
         logging.warning(f"LLM意圖辨識失敗: {e}")
     return None, None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -207,6 +270,17 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
             )
         return True
     return False
+
+
+
+
+
+
+
+
+
+
+
 
 def dummy_handler(args: str, chat_id: str = None):
     return "請使用自然語言觸發意圖辨識，例如「記得我喜歡喝咖啡」"
