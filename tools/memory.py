@@ -339,7 +339,7 @@ def handle_memory(args: str, chat_id: str = None):
             # 將「我」→「主人」
             normalized = re.sub(r'我', '主人', normalized)
             # 將「你/妳」→「agent_name」
-            normalized = re.sub(r'你|妳', safe_agent_name, normalized)
+            normalized = re.sub(r'你|妳', agent_name, normalized)
             # ------------------------------------------------------------------
             col.add(
                 documents=[normalized],
