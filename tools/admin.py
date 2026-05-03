@@ -334,7 +334,12 @@ def handle_admin(args: str, chat_id: str = None) -> str:
     elif args.startswith("logs"):
         # 默認顯示 15 行，可指定 /admin logs 30
         lines = args.split()
-        num = lines[1] if len(lines) > 1 and lines[1].isdigit() else 15
+        #num = lines[1] if len(lines) > 1 and lines[1].isdigit() else 15
+        num = args[5:].strip()
+        if not num:
+            num = 15
+
+
         try:
             result = subprocess.run(
                 f"pm2 logs {mokagi_name}_{agent_name} --lines {num} --nostream --raw", shell=True,
