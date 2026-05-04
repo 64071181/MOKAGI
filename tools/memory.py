@@ -15,7 +15,7 @@ PLUGIN_INFO = {
 
         ("回憶", "/memory list"),
     ],
-    "updata":"202605040059"
+    "updata":"202605041152"
 }
 
 

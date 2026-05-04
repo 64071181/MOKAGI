@@ -3,7 +3,7 @@ PLUGIN_INFO = {
     "icon":"🧩",
     "description": "自然語言意圖辨識 (自動轉換指令，支援動態新增外掛)",
     "handler": "dummy_handler",
-    "update": "202605040059"
+    "update": "202605041152"
 }
 
 

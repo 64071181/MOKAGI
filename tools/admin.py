@@ -14,7 +14,7 @@ PLUGIN_INFO = {
 
         ("日誌", "/admin logs")
     ],
-    "updata":"202605040059"
+    "updata":"202605041152"
 }
 
 import os
