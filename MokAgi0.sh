@@ -2,7 +2,7 @@
 
 #!/usr/bin/env bash
 # "start":"202604231241"
-# "updata":"202605041152"
+# "updata":"202505081143"
 # ==============================================
 # ==============================================
 # ================== 基礎設定 ===================
@@ -59,7 +59,7 @@ mkdir -p "${toolsUrl}"
 
 cd "${PROJECT_DIR}"
 
-# ================== 檢查並準備環境配置文件 ===================
+# ================== 檢查並準備環境配置檔案 ===================
 # 列出所有符合的設定檔（以點開頭，但不是 .env 也不是 .. 或 .）
 shopt -s dotglob
 configs=( "${PROJECT_DIR}"/.[!.]* )
@@ -77,13 +77,13 @@ if [ ${#valid_configs[@]} -eq 0 ]; then
     if [ -z "$AGENT_NAME_INPUT" ]; then
         AGENT_NAME_INPUT="default"
     fi
-    # 配置文件名稱改為 .<agent名稱>
+    # 配置檔名稱改為 .<agent名稱>
     ENV_FILE="${PROJECT_DIR}/.${AGENT_NAME_INPUT}"
-    echo -e "${GREEN}將創建配置文件：${ENV_FILE}${NC}"
+    echo -e "${GREEN}將建立配置檔案：${ENV_FILE}${NC}"
     
-    # 生成配置文件，其中 AGENT_NAME 設為用戶輸入的名稱
+    # 生成配置檔案，其中 AGENT_NAME 設為使用者輸入的名稱
     cat > "${ENV_FILE}" << 'ENV_TEMPLATE'
-# ${MokAgiName} 環境變量配置（請填寫你的信息）
+# ${MokAgiName} 環境變數配置（請填寫你的資訊）
 # 注意：等號前後不要加空格 " '
 
 # agent名稱
@@ -95,7 +95,7 @@ TG_TOKEN=你的Bot_Token
 # 管理員 Chat ID（部署成功後會收到通知）
 ADMIN_CHAT_ID=你的Telegram_Chat_ID
 
-# 允許使用機器人的用戶 ID，多個用英文逗號分隔 (留空則所有人可用)
+# 允許使用機器人的使用者 ID，多個用英文逗號分隔 (留空則所有人可用)
 ALLOWED_USERS=你的ID,受權使用者ID1,受權使用者ID2（逗號分隔，留空則所有人可用）
 
 # ================== 模型設定 ===================
@@ -141,13 +141,13 @@ MOK_NUM_THREADS=2
 # Ollama 允許的最大 CPU 執行緒數，根據你的 CPU 核心數調整(如 2、4、8）
 
 # ================== 模型固定臺詞 ===================
-MOK_start_msg=🎉 ${MokAgiName} 已成功部署並24小時在線！
+MOK_start_msg=🎉 ${MokAgiName} 已成功部署並24小時線上！
 MOK_welcome_msg=你好！我是有記憶的 AI 助手。
-MOK_unAllowed_msg=您未獲得使用權限。
+MOK_unAllowed_msg=您未獲得使用許可權。
 
 ENV_TEMPLATE
 
-    # 替换占位符
+    # 替換佔位符
     sed -i "s/__AGENT_NAME_PLACEHOLDER__/${AGENT_NAME_INPUT}/g" "${ENV_FILE}"
 
     echo -e "${YELLOW}=========================================="
@@ -156,7 +156,7 @@ ENV_TEMPLATE
     echo -e ""
     echo -e "編輯完成後，Ctrl+X > 按 Y 儲存 > 再按 Enter "
     echo -e ""
-    echo -e "，再執行腳本:"
+    echo -e "，再執行指令碼:"
     echo -e "       bash ~/MokAgi0.sh"
     echo -e ""
     echo -e "==========================================${NC}"
@@ -180,7 +180,7 @@ else
         exit 1
     fi
 fi
-# 清理 \r 字符並載入環境變量
+# 清理 \r 字元並載入環境變數
 tr -d '\r' < "${ENV_FILE}" > "${ENV_FILE}.clean"
 mv "${ENV_FILE}.clean" "${ENV_FILE}"
 export $(grep -v '^#' "${ENV_FILE}" | xargs) 2>/dev/null
@@ -213,10 +213,10 @@ fi
 mkdir -p "${PROJECT_DIR}/${AGENT_NAME}" # 建立知識庫
 
 
-# ================== 檢查必填 Telegram Bot Token 是否已設置 ===================
+# ================== 檢查必填 Telegram Bot Token 是否已設定 ===================
 if [ -z "${TG_TOKEN}" ] || [ "${TG_TOKEN}" = "你的Bot_Token" ]; then
     echo -e "${RED}❌ 錯誤：.env 中的 TG_TOKEN 未填寫或無效。${NC}"
-    echo -e "${YELLOW}請編輯 ${ENV_FILE} 後重新執行腳本。${NC}"
+    echo -e "${YELLOW}請編輯 ${ENV_FILE} 後重新執行指令碼。${NC}"
     exit 1
 fi
 
@@ -305,13 +305,13 @@ fi
 
 # ================== 模型固定臺詞 ===================
 if [ -z "${MOK_start_msg}" ]; then
-    MOK_start_msg="🎉 ${MokAgiName} 已成功部署並24小時在線！。"
+    MOK_start_msg="🎉 ${MokAgiName} 已成功部署並24小時線上！。"
 fi
 if [ -z "${MOK_welcome_msg}" ]; then
     MOK_welcome_msg="你好！我是有記憶的 AI 助手。"
 fi
 if [ -z "${MOK_unAllowed_msg}" ]; then
-    MOK_unAllowed_msg="您未獲得使用權限，請聯繫管理員。"
+    MOK_unAllowed_msg="您未獲得使用許可權，請聯絡管理員。"
 fi
 
 
@@ -450,13 +450,13 @@ echo -e "==========================================${NC}"
 rm -f "${BOT_SCRIPT}"
 cat > "${BOT_SCRIPT}" << PYEOF
 
-import asyncio, logging, httpx, os, json, importlib.util, re, sys
+import asyncio, logging, httpx, os, json, importlib.util, re, sys, subprocess
 from collections import defaultdict
 from telegram import Update, BotCommand
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ================== 加载配置文件（唯一数据源）==================
+# ================== 載入配置檔案（唯一資料來源）==================
 def load_agent_config():
     agent_name = os.environ.get("AGENT_NAME")
     if not agent_name:
@@ -466,7 +466,7 @@ def load_agent_config():
     mokagi_name = "${MokAgiName}"
     config_path = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", f".{agent_name}")
     if not os.path.exists(config_path):
-        raise RuntimeError(f"配置文件 {config_path} 不存在")
+        raise RuntimeError(f"配置檔案 {config_path} 不存在")
     config = {}
     with open(config_path, 'r') as f:
         for line in f:
@@ -482,10 +482,10 @@ config, AGENT_NAME, MOKAGI_NAME = load_agent_config()
 os.environ["AD_AGENT_NAME"] = AGENT_NAME
 os.environ["AD_AgiName"] = MOKAGI_NAME
 
-# 读取所有必要配置（带默认值）
+# 讀取所有必要配置（帶預設值）
 TG_TOKEN = config.get("TG_TOKEN")
 if not TG_TOKEN:
-    raise RuntimeError("配置文件中缺少 TG_TOKEN")
+    raise RuntimeError("配置檔案中缺少 TG_TOKEN")
 ADMIN_CHAT_ID = config.get("ADMIN_CHAT_ID", "")
 ALLOWED_USERS_STR = config.get("ALLOWED_USERS", "")
 ALLOWED_USERS = set()
@@ -505,12 +505,15 @@ MOK_temperature = float(config.get("MOK_temperature", 0.8))
 MOK_top_p = float(config.get("MOK_top_p", 0.9))
 MOK_top_k = int(config.get("MOK_top_k", 50))
 
-# 固定参数
+# 固定引數
 TIMEOUT = 300
 PLUGIN_DIR = os.path.join(os.path.dirname(__file__), "tools")
 GITHUB_TOOLS_REPO = "https://github.com/64071181/MokAgi/tree/main/tools"
 
 logging.basicConfig(level=logging.INFO)
+
+# 只會記錄 WARNING 及更高級別的日誌，而不再輸出 INFO 級別的 HTTP Request: POST ... getUpdates "HTTP/1.1 200 OK"
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 user_histories = defaultdict(list)
 tools = {}
@@ -533,9 +536,9 @@ def load_tools():
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 tools[module_name] = module
-                logging.info(f"外掛已載入: {module_name}")
+                logging.info(f"工具已載入: {module_name}")
             except Exception as e:
-                logging.error(f"載入外掛 {module_name} 失敗: {e}")
+                logging.error(f"載入工具 {module_name} 失敗: {e}")
 
 def get_plugin_commands():
     cmd_map = {}
@@ -579,7 +582,7 @@ async def query_ollama(chat_id, user_text):
     }
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         try:
-            resp = await client.post(OLLAMA_API, json=payload)
+            resp = await client.post(OLLAMA_API, json=payload, timeout=120.0)
             resp.raise_for_status()
             data = resp.json()
             reply = data.get("response", "").strip()
@@ -608,7 +611,7 @@ async def handle_message(update, context):
     user_text = update.message.text
     chat_id = update.message.chat_id
     if ALLOWED_USERS and str(chat_id) not in map(str, ALLOWED_USERS):
-        await update.message.reply_text(config.get("MOK_unAllowed_msg", "您未獲得使用權限。"))
+        await update.message.reply_text(config.get("MOK_unAllowed_msg", "您未獲得使用許可權。"))
         return
     cmd_map = get_plugin_commands()
     for cmd, handler in cmd_map.items():
@@ -616,7 +619,7 @@ async def handle_message(update, context):
             args = user_text[len(cmd):].strip()
             temp_msg = await update.message.reply_text(f"⏳ 正在執行 {cmd} ...")
             try:
-                result = handler(args, str(chat_id))
+                result = await handler(args, str(chat_id))
                 if isinstance(result, tuple):
                     text, markup = result
                     await context.bot.edit_message_text(
@@ -636,8 +639,16 @@ async def handle_message(update, context):
                 else:
                     await context.bot.edit_message_text("✅ 完成", chat_id=temp_msg.chat_id, message_id=temp_msg.message_id)
             except Exception as e:
-                await context.bot.edit_message_text(f"❌ 外掛執行錯誤: {e}", chat_id=temp_msg.chat_id, message_id=temp_msg.message_id)
+                await context.bot.edit_message_text(f"❌ 工具執行錯誤: <pre>{e}</pre>", chat_id=temp_msg.chat_id, message_id=temp_msg.message_id,
+                parse_mode='HTML')
             return
+
+    # 嘗試多步任務分解
+    multi_step_result = await execute_multi_step(chat_id, user_text)
+    if multi_step_result:
+        await update.message.reply_text(multi_step_result)
+        return
+
     if "intent" in tools and hasattr(tools["intent"], "handle_intent"):
         handled = await tools["intent"].handle_intent(
             update, context, user_text, chat_id, cmd_map, tools,
@@ -645,9 +656,51 @@ async def handle_message(update, context):
         )
         if handled:
             return
+
+
+
+    # 如果分解失敗，才走普通聊天
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-    reply = await query_ollama(chat_id, user_text)
+
+    
+    # 步驟1：詢問 Ollama，同時告訴它有哪些工具可用
+    tool_defs = build_tool_definitions()  # 收集所有工具的 tool_schema
+    llm_raw_response = await query_ollama_with_tools(chat_id, user_text, tool_defs)
+
+    # 步驟2：檢查 LLM 是否回傳了 tool_call JSON
+    tool_call = extract_tool_call(llm_raw_response)
+
+    if tool_call:
+        tool_name = tool_call.get("name")
+        tool_args = tool_call.get("arguments", {})
+
+        handler = find_tool_handler(tool_name)
+        if handler:
+            # 執行工具，得到 JSON 結果
+            raw_result = await handler(tool_args, str(chat_id))
+
+            # 將工具結果送去自然化（轉成口語）
+            reply = await naturalize_tool_result(chat_id, user_text, tool_name, raw_result)
+        else:
+            reply = f"❌ 找不到工具：{tool_name}"
+    else:
+        # 不是工具呼叫，直接使用 LLM 的文字回覆
+        reply = llm_raw_response if llm_raw_response else "抱歉，我沒有理解你的意思。"
+
+    # 將這輪對話記入歷史
+    if reply:
+        user_histories[chat_id].append({"user": user_text, "assistant": reply})
+
     await update.message.reply_text(reply)
+
+
+
+
+
+
+
+
+
 
 async def update_bot_commands(app):
     base_commands = [
@@ -680,14 +733,396 @@ async def reload_tools_command(update, context):
     tools = {}
     load_tools()
     await update_bot_commands(context.application)
-    await update.message.reply_text(f"✅ 工具已加載，當前共有 {len(get_plugin_commands())} 個工具命令。")
+    await update.message.reply_text(f"✅ 工具已載入，當前共有 {len(get_plugin_commands())} 個工具命令。")
 
 async def send_welcome(app):
     if ADMIN_CHAT_ID:
         try:
-            await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=config.get("MOK_start_msg", "🎉 ${MokAgiName} 已成功部署並24小時在線！"))
+            await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=config.get("MOK_start_msg", "🎉 ${MokAgiName} 已成功部署並24小時線上！"))
         except Exception as e:
             logging.warning(f"無法傳送歡迎訊息給 {ADMIN_CHAT_ID}: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def build_tool_definitions():
+    """從已載入的 tools 中，收集所有定義了 tool_schema 的工具"""
+    defs = []
+    for mod_name, mod in tools.items():
+        if hasattr(mod, "PLUGIN_INFO") and "tool_schema" in mod.PLUGIN_INFO:
+            defs.append(mod.PLUGIN_INFO["tool_schema"])
+    return defs
+
+def extract_tool_call(response_text):
+    """嘗試從 LLM 回覆中提取 JSON tool_call"""
+    try:
+        if "{" in response_text and "}" in response_text:
+            start = response_text.find("{")
+            end = response_text.rfind("}") + 1
+            json_str = response_text[start:end]
+            data = json.loads(json_str)
+            if "name" in data and "arguments" in data:
+                return data
+    except:
+        pass
+    return None
+
+def find_tool_handler(tool_name):
+    """根據 tool_schema 中的 name 找到對應的 handler"""
+    for mod_name, mod in tools.items():
+        if hasattr(mod, "PLUGIN_INFO"):
+            schema = mod.PLUGIN_INFO.get("tool_schema", {})
+            if schema.get("name") == tool_name:
+                return getattr(mod, mod.PLUGIN_INFO.get("handler"), None)
+    return None
+
+async def query_ollama_with_tools(chat_id, user_text, tool_defs):
+    """
+    詢問 Ollama，同時在 prompt 中附上工具定義，
+    讓模型判斷是否要輸出 tool_call JSON。
+    """
+    hist = user_histories[chat_id]
+    memory_context = ""
+    if "memory" in tools and hasattr(tools["memory"], "recall_memory"):
+        try:
+            recalled = await tools["memory"].recall_memory(
+                chat_id, user_text, MEMORY_RECALL_COUNT, include_kb=True
+            )
+            if recalled:
+                memory_context = f"【相關記憶與知識】\n{recalled}\n\n"
+        except Exception as e:
+            logging.warning(f"記憶檢索失敗: {e}")
+
+    # 建立對話歷史 prompt
+    prompt = build_prompt(hist, user_text)
+    # 在前面附上記憶與工具定義
+    full_prompt = memory_context + prompt
+
+    # 如果提供了工具定義，在 prompt 中加入讓模型選擇工具的指引
+    if tool_defs:
+        tools_desc = json.dumps(tool_defs, ensure_ascii=False)
+        full_prompt = (
+            "你是一個智慧助手，可以呼叫以下工具來回答使用者。\n"
+            "如果你需要呼叫工具，請只輸出一個 JSON 物件，格式如下：\n"
+            '{"name": "工具名稱", "arguments": {...}}\n'
+            "如果不需呼叫工具，請直接以中文回答。\n\n"
+            f"可用的工具：{tools_desc}\n\n"
+            + full_prompt
+        )
+
+    payload = {
+        "model": MOK_MODEL_NAME,
+        "prompt": full_prompt,
+        "stream": False,
+        "options": {
+            "num_ctx": MOK_num_ctx,
+            "num_predict": MOK_num_predict,
+            "temperature": MOK_temperature,
+            "top_p": MOK_top_p,
+            "top_k": MOK_top_k,
+        }
+    }
+
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        try:
+            resp = await client.post(OLLAMA_API, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            reply = data.get("response", "").strip()
+            # 清理可能的思考標記
+            if reply.startswith("Thinking Process:") or reply.startswith("{"):
+                return reply
+            return reply
+        except Exception as e:
+            logging.error(f"Ollama error: {e}")
+            return "❌ 呼叫失敗，請稍後重試。"
+
+async def naturalize_tool_result(chat_id, user_text, tool_name, raw_result):
+    """將工具回傳的 JSON 結果，送給 LLM 轉成口語化的中文回答"""
+    prompt = f"""你是一個友好的中文助手。使用者說：「{user_text}」
+
+系統使用了工具「{tool_name}」並取得以下資訊：
+{raw_result[:2000]}
+
+請把這些資訊用自然的口語重新整理，像跟朋友聊天一樣告訴使用者。不要只列出資料。"""
+
+    payload = {
+        "model": MOK_MODEL_NAME,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "num_predict": 400,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 50,
+        }
+    }
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        try:
+            resp = await client.post(OLLAMA_API, json=payload)
+            data = resp.json()
+            return data.get("response", raw_result)
+        except:
+            return raw_result
+
+    
+
+
+
+
+
+
+
+
+
+
+
+async def execute_multi_step(chat_id, user_text):
+    """讓 LLM 將使用者複雜指令分解為多個工具呼叫並執行"""
+    # 只給模型最多 4 步嘗試
+
+
+    # 动态构建工具描述
+    tool_descs = []
+    cmd_map = get_plugin_commands()
+    for cmd, handler in cmd_map.items():
+        if cmd in ["/start", "/clear", "/tools", "/reload"]:
+            continue  # 跳过基础命令
+        # 找到对应的模块
+        mod = None
+        for name, m in tools.items():
+            if hasattr(m, "PLUGIN_INFO") and m.PLUGIN_INFO.get("command") == cmd:
+                mod = m
+                break
+        if not mod:
+            continue
+        info = mod.PLUGIN_INFO
+        tool_name = info.get("tool_schema", {}).get("name", cmd.lstrip("/"))
+        desc = info.get("description", "")
+        # 构建参数格式说明（优先使用 tool_schema 中的定义）
+        schema = info.get("tool_schema")
+        if schema:
+            params = schema.get("parameters", {}).get("properties", {})
+            if params:
+                param_desc = ", ".join([f'"{k}": {v.get("description","")}' for k, v in params.items()])
+                args_format = f'args 為 {{ {param_desc} }}'
+            else:
+                args_format = "args 為字符串"
+        else:
+            # 没有 tool_schema 的用通用描述
+            args_format = "args 為字符串，具體內容請參考工具說明"
+        tool_descs.append(f"- {tool_name}: {desc}。{args_format}")
+
+    tools_desc_text = "\n".join(tool_descs) if tool_descs else "暂无工具"
+
+    prompt = f"""你是任務規劃助手。用戶的指令可能包含多個步驟。
+請列出需要按順序調用的工具，用 JSON 數組表示，每一項包含 "name" 和 "args"。
+如果只需一個工具，也返回數組格式。
+
+可用工具及其參數格式：
+{tools_desc_text}
+
+用戶指令：{user_text}
+只輸出一個純粹的 JSON 數組，不要包含任何解釋、註釋或多餘文字。"""
+
+
+
+
+
+
+    payload = {
+        "model": MOK_MODEL_NAME,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "num_predict": 300,
+            "temperature": 0.2,
+            "top_p": 0.9,
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(OLLAMA_API, json=payload)
+            resp.raise_for_status()
+            text = resp.json().get("response", "").strip()
+
+
+            # 提取 JSON 陣列
+            # 穩健提取 JSON 陣列：嘗試只提取從第一個 '[' 到最後一個 ']' 的內容
+            start = text.find('[')
+            end = text.rfind(']') + 1
+            if start == -1 or end == 0:
+                return None
+
+            json_candidate = text[start:end].strip()
+            try:
+                steps = json.loads(json_candidate)
+            except json.JSONDecodeError:
+                # 嘗試簡單的修復：將 {"xxx"} 這樣的錯誤物件轉為 "xxx" 字串
+                import re
+                def fix_invalid_args(match):
+                    content = match.group(1)
+                    # 如果物件內部只有一個不帶冒號的字串，說明是誤寫為物件了，直接提取字串
+                    if re.fullmatch(r'\s*"[^"]+"\s*', content):
+                        return '"' + content.strip().strip('"') + '"'
+                    return match.group(0)
+                
+                # 匹配 "args": { ... } 中可能只有一個字串的情況
+                fixed = re.sub(r'"args"\s*:\s*\{\s*("[^"]*")\s*\}', 
+                               lambda m: f'"args": {m.group(1)}', 
+                               json_candidate)
+                try:
+                    steps = json.loads(fixed)
+                except:
+                    # 如果還不行，嘗試其他修復策略
+                    # 全域性替換中文標點
+                    fixed2 = re.sub(r'[\u201c\u201d]', '"', json_candidate)
+                    fixed2 = re.sub(r'[\uff1a]', ':', fixed2)
+                    # 嘗試解析
+                    try:
+                        steps = json.loads(fixed2)
+                    except:
+                        logging.error(f"無法解析 JSON，原文: {text[:500]}")
+                        return None
+
+            if not isinstance(steps, list) or len(steps) == 0:
+                return None
+            # 按順序執行每一步
+            collected = []
+            cmd_map = get_plugin_commands()
+            for step in steps:
+                # 規範化 args 型別
+                name = step.get("name")
+                args = step.get("args")
+                if name in ("admin", "memory") and isinstance(args, dict):
+                    # 如果是意外物件，嘗試提取第一個值作為字串
+                    if args:
+                        first_val = next(iter(args.values()))
+                        if isinstance(first_val, str):
+                            step["args"] = first_val
+                        else:
+                            # 無法處理，跳過
+                            continue
+                elif name == "web_search" and isinstance(args, str):
+                    # 如果是字串，轉換為帶 query 的物件
+                    step["args"] = {"query": args}
+                # 根據工具名獲取 handler
+                if name == "admin":
+                    handler = cmd_map.get("/admin")
+                elif name == "web_search":
+                    handler = cmd_map.get("/search")
+                elif name == "memory":
+                    handler = cmd_map.get("/memory")
+                else:
+                    handler = None
+                if handler:
+                    try:
+                        if isinstance(args, dict):
+                            result = await handler(args, str(chat_id))
+                        else:
+                            result = await handler(str(args), str(chat_id))
+                        # 嘗試呼叫工具的自然化函式
+                        naturalized_result = None
+                        mod = find_module_by_command(name)  # 你需要寫一個輔助函式，根據工具名找到模組
+                        if mod and hasattr(mod, "PLUGIN_INFO") and "naturalize_func" in mod.PLUGIN_INFO:
+                            func = getattr(mod, mod.PLUGIN_INFO["naturalize_func"])
+                            try:
+                                naturalized_result = await func(
+                                    user_text=user_text,
+                                    raw_result=result,
+                                    ollama_api=OLLAMA_API,
+                                    model_name=MOK_MODEL_NAME
+                                )
+                            except:
+                                pass
+                        if naturalized_result:
+                            collected.append(naturalized_result)
+                        else:
+                            collected.append(f"{name}: {str(result)[:200]}")
+                    except Exception as e:
+                        collected.append(f"工具 {name} 執行失敗：{e}")
+                else:
+                    collected.append(f"未找到工具 {name}")
+
+            # 讓 LLM 總結所有結果
+            summary_prompt = f"""使用者指令：{user_text}
+工具執行結果：
+{chr(10).join(collected)}
+
+請用中文像朋友一樣告訴使用者結果。"""
+
+            # 除錯日誌：輸出即將傳送的總結 prompt 前 300 字
+            logging.info(f"Summary prompt (前300字)：{summary_prompt[:300]}")
+
+            try:
+                resp2 = await client.post(OLLAMA_API, json={
+                    "model": MOK_MODEL_NAME,
+                    "prompt": summary_prompt,
+                    "stream": False,
+                    "options": {"num_predict": 2000, "temperature": 0.7}
+                }, timeout=180.0)
+                resp2.raise_for_status()
+                final_text = resp2.json().get("response", "").strip()
+                logging.info(f"Final summary response：{final_text[:200]}")
+                if final_text:
+                    return final_text
+                else:
+                    logging.warning("Final summary 為空，使用拼接文字")
+                    return "\n\n".join(collected)
+            except Exception as summary_err:
+                logging.exception("Final summary LLM 呼叫失敗")
+                return "\n\n".join(collected)
+    except Exception as e:
+        logging.exception(f"多步執行失敗: {e}")
+        return None
+
+
+
+
+
+
+
+
+def find_module_by_command(cmd_name):
+    # cmd_name 可能是 "admin", "web_search", "memory"
+    # 需要對映到模組名，比如 "/admin" -> "admin", "/search" -> "web_search"
+    for mod_name, mod in tools.items():
+        if hasattr(mod, "PLUGIN_INFO"):
+            if mod.PLUGIN_INFO.get("command") == f"/{cmd_name}":
+                return mod
+            # 特殊處理：web_search 的 command 是 /search
+            if cmd_name == "web_search" and mod.PLUGIN_INFO.get("command") == "/search":
+                return mod
+            if cmd_name == "memory" and mod.PLUGIN_INFO.get("command") == "/memory":
+                return mod
+    return None
+
+
+
+
+
+
+
 
 def main():
     load_tools()
@@ -802,7 +1237,7 @@ echo ""
 echo -e " 刪除指定模型 "
 echo -e "     ollama rm mok_3b:latest "
 echo ""
-echo -e " 💖 查看CPU:"
+echo -e " 💖 檢視CPU:"
 echo -e "      htop "
 echo ""
 echo -e " 如 CPU100% 強制清理所有 ollama runner"
