@@ -15,7 +15,7 @@ PLUGIN_INFO = {
 
         ("回憶", "/memory list"),
     ],
-    "updata":"202605041152"
+    "updata":"202505081143"
 }
 
 
@@ -29,10 +29,8 @@ PLUGIN_INFO = {
 
 
 
-import logging, os, re
-import chromadb
+import logging, os, re, chromadb, hashlib
 from chromadb.config import Settings
-import hashlib
 from chromadb.utils import embedding_functions
 
 # agent 名稱
@@ -40,11 +38,11 @@ mokagi_name = os.environ.get("AD_AgiName")
 agent_name = os.environ.get("AD_AGENT_NAME", "default")
 
 def sanitize_name_for_chromadb(raw_name: str) -> str:
-    """使用哈希生成唯一且合规的 ChromaDB collection 名称"""
+    """使用哈希生成唯一且合規的 ChromaDB collection 名稱"""
     import hashlib
-    # 用 MD5 哈希确保不同名称生成不同字符串（长度固定，只含十六进制字符）
+    # 用 MD5 哈希確保不同名稱生成不同字符串（長度固定，只含十六進制字符）
     hash_hex = hashlib.md5(raw_name.encode()).hexdigest()[:16]
-    # 确保首字符为字母（ChromaDB 要求）
+    # 確保首字符為字母（ChromaDB 要求）
     return f"agent_{hash_hex}"
 
 safe_agent_name = sanitize_name_for_chromadb(agent_name)
@@ -393,7 +391,7 @@ async def recall_memory(chat_id: int, query: str, n_results: int = 1, include_kb
              *% =*-              :+%@.   ::            +*       #%=             
 '''
 # ---------- 原 handle_memory 保持不變，僅新增 rebuild_kb 分支 ----------
-def handle_memory(args: str, chat_id: str = None):
+async def handle_memory(args: str, chat_id: str = None):
     if MISSING_DEPS:
         msg = (
             "❌ 記憶工具缺少必要套件：`chromadb`、`sentence-transformers`\n\n"

@@ -1,9 +1,38 @@
+# ------------------------------------------------------------------------------------ #
+# 字典: PLUGIN_INFO
+# 用途: 定義一個工具外掛與主程式、意圖辨識系統之間的介面協定。
+#       每個工具模組頂部都必須定義這個字典，主程式會透過它來：
+#         1. 註冊 Telegram 命令 (command)
+#         2. 建立自然語言關鍵詞映射 (intent_keywords)
+#         3. 提供給 LLM 的工具描述 (tool_schema)
+#         4. 指定執行函數 (handler) 與結果自然化函數 (naturalize_func)
+# 設計:
+#   - 所有欄位皆為選填（除 command、handler、description 外），但建議完整填寫以獲得最佳體驗。
+#   - 若工具會回傳 JSON，建議實作 naturalize_func，讓結果以自然語言呈現。
+#   - tool_schema 是給 LLM 看的「工具說明書」，用 JSON Schema 格式描述參數與用途，
+#     讓 AI 能在需要時自動調用工具（未來擴展用）。
+# 欄位說明:
+#   command           : Telegram 命令，例如 "/search"。
+#   icon              : 命令的圖示（目前僅供參考）。
+#   handler           : 負責處理該命令的函數名稱（字串），主程式會用 getattr 取得實際函數。
+#   description       : 簡短的功能描述，會出現在命令選單和說明訊息中。
+#   intent_keywords   : 自然語言觸發關鍵詞列表，支援兩種格式：
+#                         - 字串: "搜尋" → 自動對應到根命令。
+#                         - 元組: ("記住", "/memory remember") → 精確指定子命令。
+#   updata            : 最後更新日期，純註記用。
+#   naturalize        : (舊版欄位) 標記是否允許自然化，現已被 naturalize_func 取代。
+#   naturalize_func   : (新版欄位) 指定結果自然化函數的名稱，必須是模組內的 async 函數。
+#                       簽名: async def func(user_text, raw_result, ollama_api, model_name, temp_msg, context) -> str
+#   tool_schema       : 提供給 AI 的工具定義 (JSON Schema)，包含 name、description、parameters。
+#                       用於 LLM 工具調用，讓模型自行決定何時該使用此工具。
+# ------------------------------------------------------------------------------------ #
+
 PLUGIN_INFO = {
     "command": "/intent",
     "icon":"🧩",
     "description": "自然語言意圖辨識 (自動轉換指令，支援動態新增外掛)",
     "handler": "dummy_handler",
-    "update": "202605041152"
+    "update": "202505081143"
 }
 
 
@@ -26,16 +55,13 @@ PLUGIN_INFO = {
 
 
 
-import httpx
-import json
-import logging
-import re
+import httpx, json, logging, re, html, time
 from typing import Dict, Any
-
-
 # 全域變數，由主程式透過鉤子傳入
 _cmd_map = {}
 _tools = {}
+_ollama_api = ""
+_model_name = ""
 
 
 
@@ -50,8 +76,18 @@ _tools = {}
 
 
 
-
-
+# ------------------------------------------------------------------------------------ #
+# 函數: build_keyword_map
+# 用途: 從所有已載入的工具外掛中，自動收集「自然語言關鍵詞 → 完整命令」的對應表。
+# 設計:
+#   每個工具可以在 PLUGIN_INFO 的 intent_keywords 中定義兩種格式:
+#     1. 簡單字串:         "搜尋"            → 自動對應到該工具的根命令 (如 /search)
+#     2. 元組 (關鍵詞, 命令): ("記住", "/memory remember") → 明確指定完整命令
+#   若工具未定義 intent_keywords，則自動從工具的描述文字中提取中文字詞當作關鍵詞（較弱）。
+#   這樣設計是為了讓使用者能夠用自然語言觸發工具，同時支援工具的獨立定義，無需修改意圖模組。
+# 返回:
+#   dict: { "關鍵詞": "/完整命令" }
+# ------------------------------------------------------------------------------------ #
 def build_keyword_map(cmd_map: dict, tools: dict) -> Dict[str, str]:
     """返回 {關鍵詞: 完整命令} 映射，支援兩種格式：
        - 簡單關鍵詞列表: ["關鍵詞"] → 映射到該插件的默認命令（cmd）
@@ -85,11 +121,38 @@ def build_keyword_map(cmd_map: dict, tools: dict) -> Dict[str, str]:
                 elif isinstance(item, str):
                     # 傳統格式：關鍵詞映射到插件的根命令
                     kw_map[item.lower()] = cmd
-                else:
-                    logging.warning(f"忽略錯誤格式的 intent_keywords 項目: {item}")
+                #else:
+                #    logging.warning(f"忽略錯誤格式的 intent_keywords 項目: {item}")
     return kw_map
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------------------------ #
+# 函數: rule_based_intent
+# 用途: 根據預先建立的關鍵字映射表，快速判斷使用者輸入是否命中某個工具的關鍵詞。
+# 設計:
+#   這層規則匹配比 LLM 快且免費，適合處理常見的簡單命令（如「搜尋」、「記住」、「日誌」）。
+#   當關鍵詞出現在使用者訊息中，就提取掉關鍵詞後的剩餘文字作為參數。
+#   注意：如果多個關鍵詞重疊，只會匹配第一個找到的，順序取決於工具載入順序。
+# 返回:
+#   tuple (完整命令, 參數字串) 或 (None, None)
+# ------------------------------------------------------------------------------------ #
 async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
     """回傳 (完整命令, 參數) 或 (None, None)"""
     text_lower = user_text.lower()
@@ -98,7 +161,6 @@ async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
             # 提取參數：移除第一個匹配的關鍵詞後的部分
             # 注意：用戶訊息可能包含關鍵詞的前後文，直接移除關鍵詞
             # 簡單做法：用正則替換第一個出現的關鍵詞（不區分大小寫）
-            import re
             pattern = re.compile(re.escape(kw), re.IGNORECASE)
             args = pattern.sub('', user_text, count=1).strip()
             return full_cmd, args
@@ -121,6 +183,26 @@ async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
 
 
 
+
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------------------------ #
+# 函數: llm_intent
+# 用途: 當規則匹配失敗時，使用本地 LLM (Ollama) 進行意圖分類，輸出 JSON 格式的命令。
+# 設計:
+#   動態生成 prompt，列出所有可用的命令及其說明，要求 LLM 輸出 {"command": ..., "args": ...}。
+#   這樣即使使用者說法稍微變化，也能被正確識別，而不需要逐一維護大量規則。
+#   使用較低的 temperature (0.1) 以保證輸出穩定性，並限制生成 token 數量以加速回應。
+#   如果 LLM 失敗或回傳格式不正確，則返回 (None, None) 讓上層繼續處理（例如自然語言回答）。
+# 返回:
+#   tuple (完整命令, 參數字串) 或 (None, None)
+# ------------------------------------------------------------------------------------ #
 async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str, model_name: str) -> tuple:
     """使用 LLM 分類意圖，動態生成 prompt（通用版，不硬編碼任何工具）"""
     # 建立指令描述列表
@@ -193,15 +275,58 @@ async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------------------------ #
+# 函數: handle_intent
+# 用途: 主意圖處理入口，由主程式 (MokAgi.py) 在收到使用者訊息且非直接命令時調用。
+# 設計:
+#   1. 先用 build_keyword_map 建立關鍵詞映射，再用 rule_based_intent 快速匹配。
+#   2. 若規則未命中，則調用 llm_intent 讓 LLM 判斷意圖。
+#   3. 得到命令後，通過 cmd_map 找到對應的 handler 函數，並解析參數（支援子命令如 /memory remember）。
+#   4. 執行 handler，並對返回的 JSON 結果進行「自然化」處理：
+#      - 若該工具定義了 naturalize_func，則調用它來產生自然語言回覆（支援流式顯示思考過程）。
+#      - 若沒有，則直接顯示原始結果或給出失敗提示。
+#   5. 所有過程通過 Telegram 的臨時消息 (temp_msg) 動態更新，讓用戶看到進度。
+#   這樣的設計將意圖辨識、工具調用、結果呈現完全解耦，每個工具只需專注於自己的業務邏輯和呈現方式。
+# 返回:
+#   bool: True 表示已處理該消息，False 表示未命中任何意圖（應交由默認的對話處理）
+# ------------------------------------------------------------------------------------ #
 async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: dict, tools: dict,ollama_api: str, model_name: str) -> bool:
     """主鉤子函數，需要主程式傳入 tools 物件（需修改主程式呼叫）"""
-    global _cmd_map, _tools
+    global _cmd_map, _tools, _ollama_api, _model_name
     _cmd_map = cmd_map
     _tools = tools
 
     # 將接收到的模型設定儲存或直接傳遞給內部函式
     # 可以設為模組變數供其他函式使用
-    global _ollama_api, _model_name
     _ollama_api = ollama_api
     _model_name = model_name
 
@@ -241,7 +366,62 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
         display_cmd = root_cmd if 'root_cmd' in locals() else cmd
         temp_msg = await update.message.reply_text(f"⏳ 正在執行 {display_cmd} ...")
         try:
-            result = handler(final_args, str(chat_id))
+            result = await handler(final_args, str(chat_id))
+
+            # ---------- 流式自然化：實時顯示思考過程 ----------
+            if isinstance(result, str) and result.strip().startswith('{'):
+                mod = None
+                for name, m in tools.items():
+                    if hasattr(m, "PLUGIN_INFO") and m.PLUGIN_INFO.get("command") == display_cmd:
+                        mod = m
+                        break
+                naturalize_func = None
+                if mod and hasattr(mod, "PLUGIN_INFO"):
+                    func_name = mod.PLUGIN_INFO.get("naturalize_func")
+                    if func_name:
+                        naturalize_func = getattr(mod, func_name, None)
+
+                # 發送原始 JSON 預覽
+                raw_preview = result[:3500]
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"📄 原始結果：\n<pre>{html.escape(raw_preview)}</pre>",
+                    parse_mode='HTML'
+                )
+
+                if naturalize_func:
+                    # 調用工具自己的自然化函數，傳遞 temp_msg 支持流式
+                    naturalized = await naturalize_func(
+                        user_text=user_text,
+                        raw_result=result,
+                        ollama_api=ollama_api,
+                        model_name=model_name,
+                        temp_msg=temp_msg,
+                        context=context
+                    )
+                else:
+                    # 無專用函數時，使用通用自然化（可保留簡單的備選邏輯或直接返回失敗）
+                    naturalized = None
+
+                if naturalized:
+                    # 安全處理：先轉義全部 HTML 字符，再還原我們需要的 <pre> 標籤
+                    safe_text = html.escape(naturalized)
+                    safe_text = safe_text.replace("&lt;pre&gt;", "<pre>").replace("&lt;/pre&gt;", "</pre>")
+                    await context.bot.edit_message_text(
+                        chat_id=temp_msg.chat_id,
+                        message_id=temp_msg.message_id,
+                        text=safe_text,
+                        parse_mode='HTML'   # 確保傳入 parse_mode
+                    )
+                else:
+                    await context.bot.edit_message_text(
+                        chat_id=temp_msg.chat_id,
+                        message_id=temp_msg.message_id,
+                        text="⚠️ 自然化失敗，請查看上方原始數據。"
+                    )
+                return True
+            # -----------------------------------------------------------
+
             if isinstance(result, tuple):
                 text, markup = result
                 await context.bot.edit_message_text(
@@ -254,7 +434,8 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
                 await context.bot.edit_message_text(
                     chat_id=temp_msg.chat_id,
                     message_id=temp_msg.message_id,
-                    text=result
+                    text=result,
+                    parse_mode='HTML'
                 )
             else:
                 await context.bot.edit_message_text(
@@ -262,6 +443,7 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
                     chat_id=temp_msg.chat_id,
                     message_id=temp_msg.message_id
                 )
+                
         except Exception as e:
             await context.bot.edit_message_text(
                 f"❌ 執行意圖命令失敗: {e}",
@@ -282,7 +464,34 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
 
 
 
-def dummy_handler(args: str, chat_id: str = None):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------------------------ #
+# 函數: dummy_handler
+# 用途: 佔位用的工具處理函數，當使用者直接發送 /intent 命令時，給予提示訊息。
+#       實際上意圖辨識功能是透過 handle_intent 被主程式調用，而不是由使用者直接發送 /intent。
+# 設計: 簡單回覆一句說明，引導使用者用自然語言互動而非直接操作此命令。
+# ------------------------------------------------------------------------------------ #
+async def dummy_handler(args: str, chat_id: str = None):
     return "請使用自然語言觸發意圖辨識，例如「記得我喜歡喝咖啡」"
 
 
