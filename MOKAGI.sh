@@ -123,7 +123,7 @@ if [ ${#valid_configs[@]} -eq 0 ]; then
         MOK_AGENT_NAME_INPUT="default"
     fi
     echo -e "${GREEN}建立配置檔範本 .${MOK_AGENT_NAME_INPUT} ...${NC}"
-    curl -sL "${GITHUB_REPO_RAW}/tools/env.env" -o "${PROJECT_DIR}/.${MOK_AGENT_NAME_INPUT}"
+    curl -sL "${GITHUB_REPO_RAW}/env.env" -o "${PROJECT_DIR}/.${MOK_AGENT_NAME_INPUT}"
     # 替換佔位符（注意 env.env 中的 __MOK_AGENT_NAME_PLACEHOLDER__）
     sed -i "s/__MOK_AGENT_NAME_PLACEHOLDER__/${MOK_AGENT_NAME_INPUT}/g" "${PROJECT_DIR}/.${MOK_AGENT_NAME_INPUT}"
 elif [ ${#valid_configs[@]} -eq 1 ]; then
