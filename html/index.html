@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>mok_agi</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+
+    <!-- Markdown 渲染庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 可選：代碼高亮樣式（不影響功能，但讓代碼塊更好看） -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Cascadia Code', 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+        /* 主容器 */
+        .app-container {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        /* 左側 Agent 面板 */
+        .agent-sidebar {
+            width: 260px;
+            background: #252526;
+            border-right: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: width 0.2s;
+            position: relative;
+        }
+        .agent-sidebar.collapsed {
+            width: 40px;
+        }
+        .agent-sidebar.collapsed .agent-header span,
+        .agent-sidebar.collapsed .agent-name {
+            display: none;
+        }
+        .agent-header {
+            padding: 12px 8px;
+            font-weight: bold;
+            background: #2d2d30;
+            color: #4ec9b0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            white-space: nowrap;
+        }
+        .collapse-btn {
+            background: none;
+            border: none;
+            color: #4ec9b0;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0 6px;
+        }
+        .agent-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .agent-item {
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #2d2d30;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        .agent-item.active {
+            background: #0f4c5c;
+            border-left: 3px solid #4ec9b0;
+        }
+        .agent-icon {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        /* 左側拖拽手柄 */
+        #left-resize-handle {
+            width: 4px;
+            background: #4ec9b0;
+            cursor: ew-resize;
+            position: absolute;
+            right: -2px;
+            top: 0;
+            bottom: 0;
+            z-index: 10;
+        }
+        /* 中央聊天區 */
+        .chat-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background: #1e1e1e;
+            bottom: 0;
+        }
+        .chat-header {
+            padding: 10px 16px;
+            background: #2d2d30;
+            border-bottom: 1px solid #3e3e42;
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            position: relative;
+        }
+
+
+
+
+
+        /* 右側快速跳轉面板 */
+        .quick-jump {
+            position: fixed;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);  /* 垂直居中，避免高度固定導致壓縮 */
+            max-height: 360px;             /* 最大高度為視口的70%，超出滾動 */
+            width: 40px;
+            background: rgba(0, 0, 0, 0);
+            border-radius: 12px 0 0 12px;
+            transition: width 0.2s, background 0.2s;
+            overflow-y: auto;             /* 內容過多時滾動 */
+            z-index: 15;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding-top: 12px;
+            gap: 6px;
+            opacity: .5;
+        }
+        .quick-jump::-webkit-scrollbar {
+            width: 4px;
+        }
+        .quick-jump::-webkit-scrollbar-track {
+            background: #2d2d30;
+        }
+        .quick-jump::-webkit-scrollbar-thumb {
+            background: #4ec9b0;
+            border-radius: 4px;
+        }
+
+        .quick-jump:hover {
+            width: 200px;
+            background: rgba(30, 30, 30, 0.95);
+            opacity: .9;
+        }
+        .quick-jump-item {
+            width: 100%;
+            padding: 8px 12px;
+            font-size: .8rem;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #ccc;
+            transition: 0.1s;
+            border-left: 2px solid transparent;
+            flex-shrink: 0;               /* 關鍵：禁止壓縮條目高度 */
+            min-height: 36px;             /* 保證最小高度，防止壓扁 */
+        }
+        .quick-jump-item:hover {
+            background: #0f4c5c;
+            color: white;
+            border-left-color: #4ec9b0;
+        }
+        .quick-jump-item .jump-time {
+            font-size: .8rem;
+            color: #888;
+            margin-right: 8px;
+        }
+        .quick-jump:hover .quick-jump-item {
+            white-space: nowrap;
+        }
+        /* 默認只顯示一個圖標 */
+        .quick-jump:not(:hover) .quick-jump-item {
+            padding: 6px 0;
+            text-align: center;
+            font-size: 0;
+        }
+        .quick-jump:not(:hover) .quick-jump-item::before {
+            content: "-";
+            font-size: 1rem;
+            display: inline-block;
+            text-align: center;
+            width: 100%;
+        }
+        .quick-jump:not(:hover) .quick-jump-item .jump-time,
+        .quick-jump:not(:hover) .quick-jump-item span:not(:first-child) {
+            display: none;
+        }
+
+        /* 右側工具面板 */
+        .tools-panel {
+            width: 50%;
+            background: #1e1e1e;
+            border-left: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: width 0.2s;
+            position: relative;
+        }
+        .tools-panel.collapsed {
+            width: 40px;
+        }
+        .tools-panel.collapsed .tools-header span,
+        .tools-panel.collapsed .tools-content {
+            display: none;
+        }
+        .tools-header {
+            padding: 8px;
+            background: #2d2d30;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+        .tools-header-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .tools-header-buttons button {
+            background: none;
+            border: none;
+            color: #ccc;
+            padding: 4px 10px;
+            cursor: pointer;
+            border-radius: 16px;
+            font-size: 0.8rem;
+        }
+        .tools-header-buttons button.active {
+            background: #4ec9b0;
+            color: #1e1e1e;
+        }
+        .tools-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        /* 右側拖拽手柄 */
+        #right-resize-handle {
+            width: 4px;
+            background: #4ec9b0;
+            cursor: ew-resize;
+            position: absolute;
+            left: -2px;
+            top: 0;
+            bottom: 0;
+            z-index: 10;
+        }
+        /* 聊天消息樣式 */
+        .message {
+            max-width: 85%;
+            animation: fadeInUp 0.2s ease;
+        }
+        .message.user { align-self: flex-end; }
+        .message.assistant { align-self: flex-start; }
+        .message-bubble {
+            padding: 8px 12px;
+            border-radius: 16px;
+            background: #2d2d30;
+            word-wrap: break-word;
+            word-break: break-all;      /* 強制長 URL 換行 */
+            overflow-wrap: break-word;  /* 兼容標準寫法 */
+        }
+        .message.user .message-bubble { background: #0f4c5c; }
+        .message-meta {
+            font-size: 0.7rem;
+            color: #888;
+            margin-top: 4px;
+        }
+        .think-container {
+            background: #2a2a2e;
+            border-radius: 10px;
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            border-left: 3px solid #e0a800;
+        }
+        .think-content {
+            font-size: 0.8rem;
+            color: #bbb;
+        }
+        .chat-input-area {
+            padding: 12px ;
+            background: #1e1e1e;
+            border-top: 1px solid #3e3e42;
+        }
+        .chat-input-area textarea {
+            width: 100%;
+            background: #1e1e1e;
+            border: 1px solid #4ec9b0;
+            border-radius: 24px;
+            padding: 8px 14px;
+            color: #d4d4d4;
+            resize: vertical;
+        }
+        .btnBox {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+        /* 桌面端隱藏手機面板按鈕 */
+        .mobile-panel-btn {
+            display: none;
+        }
+        @media (max-width: 768px) {
+
+
+            .chat-input-area {
+                min-height: 180px;
+            }
+
+            .agent-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                z-index: 100;
+                transform: translateX(-100%);
+                transition: transform 0.2s;
+                width: 40% !important;
+                opacity: .8;
+            }
+            .agent-sidebar.mobile-open {
+                transform: translateX(0);
+            }
+            .tools-panel {
+                position: fixed;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                z-index: 100;
+                transform: translateX(100%);
+                transition: transform 0.2s;
+                width: 80% !important;
+                opacity: .8;
+            }
+            .tools-panel.mobile-open {
+                transform: translateX(0);
+            }
+            .mobile-panel-btn {
+                display: inline-block;
+            }
+            #left-resize-handle, #right-resize-handle {
+                display: none;
+            }
+            #scrollToBottomBtn {
+                bottom: 80px;
+                right: 16px;
+            }
+        }
+        button {
+            background: #4ec9b0;
+            border: none;
+            border-radius: 40px;
+            padding: 4px 12px;
+            font-weight: bold;
+            color: #1e1e1e;
+            cursor: pointer;
+        }
+        button:hover { background: #e0a800; }
+        /* 文件樹 */
+        .tree-container { background: #252526; padding: 12px; border-radius: 8px; overflow-x: auto; }
+        ul { list-style: none; padding-left: 16px; }
+        .file { color: #ce9178; cursor: pointer; }
+        .dir { color: #dcdcaa; font-weight: bold; cursor: pointer; }
+        .dir::before { content: '📁 '; }
+        .file::before { content: '📄 '; }
+        .dir.collapsed::after { content: ' ▸'; }
+        .dir:not(.collapsed)::after { content: ' ▾'; }
+        .dir.collapsed > ul { display: none; }
+        .media-view { background: #1e1e1e; padding: 12px; border-radius: 5px; margin-top: 12px; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #scrollToBottomBtn {
+            background: #4ec9b0;
+            color: #1e1e1e;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.5;
+        }
+
+        .message-bubble h1, .message-bubble h2, .message-bubble h3 {
+            margin: 0.5em 0;
+            color: #4ec9b0;
+        }
+        .message-bubble p {
+            margin: 0.5em 0;
+            line-height: 1.4;
+        }
+        .message-bubble pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .message-bubble code {
+            background: #2d2d30;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .message-bubble blockquote {
+            border-left: 3px solid #4ec9b0;
+            margin: 0.5em 0;
+            padding-left: 1em;
+            color: #aaa;
+        }
+
+    </style>
+</head>
+<body>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="app-container">
+    <!-- 左側 Agent 列表 -->
+    <div class="agent-sidebar" id="agentSidebar">
+        <div class="agent-header">
+            <span>Agent 列表</span>
+            <button class="collapse-btn" id="toggleAgentSidebar">◀</button>
+        </div>
+        <div class="agent-list" id="agentList"></div>
+    </div>
+
+    <!-- 中央聊天區 -->
+    <div class="chat-main">
+        <div id="haveOnline" class="chat-header">💬 對話 · <span id="currentAgentName">Agent</span></div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-area">
+            <textarea id="chatInput" rows="2" placeholder="(Shift+Enter換行，Enter發送)"></textarea>
+            <div class="btnBox">
+                <button id="scrollToBottomBtn">↓</button>
+                <button id="mobileOpenLeftBtn" class="mobile-panel-btn">☰</button>
+                <button id="mobileOpenRightBtn" class="mobile-panel-btn">📂</button>
+                <button id="stopBtn">⏹️ 停止</button>
+                <button id="clearChatBtn">🗑️ 清除</button>
+                <button id="sendBtn">📨 發送</button>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- 右側工具面板 -->
+    <div class="tools-panel" id="toolsPanel">
+        <div class="tools-header">
+            <div class="tools-header-buttons">
+                <button data-tool="files">📁 文件</button>
+                <button data-tool="ascii">🎨 ASCII</button>
+                <button data-tool="monitor">📊 監控</button>
+                <button data-tool="settings">⚙️ 設定</button>
+            </div>
+            <button id="toggleToolsPanel">❌</button>
+        </div>
+        <div class="tools-content" id="toolsContent"></div>
+        <div id="right-resize-handle"></div>
+    </div>
+</div>
+<!-- 滾動到底部按鈕 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+    const socket = io();
+    // 全局狀態
+    let currentAgent = '助手';
+    let agentList = [];
+    let mokConfig = {};
+    let agentStartMsg = '';
+    let modelsList = [];
+    let currentModelIndex = 0;
+    let currentTool = 'files';
+    let chatMessagesDiv = null;
+    let currentThinkDiv = null, currentReplyDiv = null;
+    let currentAssistantDiv = null;   // 保存臨時助手消息的DOM元素
+    let accumulatedReply = '', accumulatedThink = '';
+    let fileContentPre, imageViewer, videoViewer, currentFilenameSpan;
+    let scrollBtn = null;
+    let quickJumpPanel = null;  // 快速跳轉面板的DOM
+
+    // ---------- 輔助 ----------
+    function escapeHtml(str) { return str?.replace(/[&<>]/g, m => m === '&' ? '&amp;' : (m === '<' ? '&lt;' : '&gt;')) || ''; }
+    function scrollToBottom() { if (chatMessagesDiv) setTimeout(() => chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight, 50); }
+
+    // Markdown 渲染（安全轉義 HTML 後渲染）
+    function renderMarkdown(text) {
+        if (!text) return '';
+        // 先用 marked 解析 Markdown
+        let html = marked.parse(text, { breaks: true }); // breaks: true 讓換行變成 <br>
+        // 可選：高亮代碼塊
+        if (typeof hljs !== 'undefined') {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            tempDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            html = tempDiv.innerHTML;
+        }
+        return html;
+    }
+
+
+    // 滾動按鈕控制
+    function initScrollButton() {
+        scrollBtn = document.getElementById('scrollToBottomBtn');
+        if (!scrollBtn || !chatMessagesDiv) return;
+        const checkScroll = () => {
+            const isAtBottom = chatMessagesDiv.scrollHeight - chatMessagesDiv.scrollTop - chatMessagesDiv.clientHeight < 10;
+            scrollBtn.style.display = isAtBottom ? 'none' : 'flex';
+        };
+        chatMessagesDiv.addEventListener('scroll', checkScroll);
+        scrollBtn.addEventListener('click', () => {
+            chatMessagesDiv.scrollTo({ top: chatMessagesDiv.scrollHeight, behavior: 'smooth' });
+        });
+        checkScroll();
+    }
+
+    // ---------- 快速跳轉面板 ----------
+    function buildQuickJumpPanel() {
+        if (!chatMessagesDiv) return;
+        // 移除舊面板
+        if (quickJumpPanel) quickJumpPanel.remove();
+        quickJumpPanel = document.createElement('div');
+        quickJumpPanel.className = 'quick-jump';
+        chatMessagesDiv.appendChild(quickJumpPanel);
+        updateQuickJumpItems();
+    }
+
+    function updateQuickJumpItems() {
+        if (!quickJumpPanel) return;
+        const userMessages = chatMessagesDiv.querySelectorAll('.message.user');
+        if (userMessages.length === 0) {
+            quickJumpPanel.innerHTML = '';
+            return;
+        }
+        quickJumpPanel.innerHTML = '';
+        userMessages.forEach((msg, idx) => {
+            const msgText = msg.querySelector('.message-bubble')?.innerText || '訊息';
+            const timeElem = msg.querySelector('.message-meta');
+            const time = timeElem ? timeElem.innerText : '';
+            const preview = msgText.length > 30 ? msgText.substring(0, 30) + '…' : msgText;
+            const item = document.createElement('div');
+            item.className = 'quick-jump-item';
+            item.innerHTML = `<span>${escapeHtml(preview)}</span>`;
+            item.addEventListener('click', () => {
+                msg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+            quickJumpPanel.appendChild(item);
+        });
+    }
+
+
+    // ---------- Agent ----------
+    async function loadAgentList() {
+        try {
+            const res = await fetch('/api/env_files');
+            const data = await res.json();
+            agentList = data.files.map(file => ({ name: file.replace(/^\./, ''), file }));
+            renderAgentList();
+            if (agentList.length && !currentAgent) activateAgent(agentList[0].name);
+            else if (agentList.length && currentAgent) activateAgent(currentAgent);
+        } catch (err) { console.error(err); }
+    }
+    function renderAgentList() {
+        const container = document.getElementById('agentList');
+        if (!container) return;
+        container.innerHTML = '';
+        agentList.forEach(agent => {
+            const div = document.createElement('div');
+            div.className = 'agent-item' + (currentAgent === agent.name ? ' active' : '');
+            div.innerHTML = `<div class="agent-icon">🌸</div><span class="agent-name">${escapeHtml(agent.name)}</span>`;
+            div.addEventListener('click', () => { if (currentAgent !== agent.name) activateAgent(agent.name); });
+            container.appendChild(div);
+        });
+    }
+    async function activateAgent(agentName) {
+        const fileName = '.' + agentName;
+        try {
+            const res = await fetch('/api/set_env', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: fileName })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                currentAgent = agentName;
+                document.getElementById('currentAgentName').innerText = currentAgent;
+                renderAgentList();
+                // 加載配置
+                const configRes = await fetch('/api/mok_config');
+                const configData = await configRes.json();
+                mokConfig = configData;
+                agentStartMsg = mokConfig.MOK_start_msg || '低語：您好～';
+                await loadModels();
+                loadChatHistory();
+                if (currentTool === 'settings') renderSettingsContent();
+            }
+        } catch (err) { console.error(err); }
+    }
+
+    // 模型
+    async function loadModels() {
+        try {
+            const res = await fetch('/api/models');
+            const data = await res.json();
+            modelsList = data.models;
+            currentModelIndex = data.current_index;
+            if (currentTool === 'settings') renderSettingsContent();
+        } catch (err) { console.error(err); }
+    }
+    async function switchModel(index) {
+        try {
+            const res = await fetch('/api/set_model', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                currentModelIndex = index;
+                if (currentTool === 'settings') renderSettingsContent();
+                alert(`已切換到模型: ${data.model.name}`);
+            }
+        } catch (err) { console.error(err); }
+    }
+
+
+// ---------- 後端存儲聊天曆史 ----------
+async function loadChatHistoryFromServer() {
+    try {
+        const res = await fetch(`/api/chat_history?agent=${encodeURIComponent(currentAgent)}`);
+        const data = await res.json();
+        let messages = data.messages || [];
+        if (messages.length === 0) {
+            // 無歷史，創建默認歡迎語並保存到服務器
+            const defaultMsg = {
+                role: 'assistant',
+                content: `🌸 ${currentAgent}${agentStartMsg}`,
+                thinkContent: null,
+                timestamp: Date.now() / 1000
+            };
+            await saveChatMessageToServer(defaultMsg);
+            return [defaultMsg];
+        }
+        // 將後端返回的字段映射為前端使用的格式（注意字段名）
+        return messages.map(msg => ({
+            role: msg.role,
+            content: msg.content,
+            thinkContent: msg.thinkContent,
+            timestamp: msg.timestamp * 1000  // 轉為毫秒用於前端顯示
+        }));
+    } catch (err) {
+        console.error('加載歷史失敗', err);
+        return [{
+            role: 'assistant',
+            content: `🌸 ${currentAgent}${agentStartMsg}`,
+            thinkContent: null,
+            timestamp: Date.now()
+        }];
+    }
+}
+
+async function saveChatMessageToServer(msg) {
+    try {
+        await fetch('/api/chat_history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                agent: currentAgent,
+                role: msg.role,
+                content: msg.content,
+                thinkContent: msg.thinkContent || null,
+                timestamp: (msg.timestamp || Date.now()) / 1000
+            })
+        });
+    } catch (err) {
+        console.error('保存消息失敗', err);
+    }
+}
+
+async function clearChatHistoryOnServer() {
+    try {
+        await fetch(`/api/chat_history?agent=${encodeURIComponent(currentAgent)}`, { method: 'DELETE' });
+    } catch (err) {
+        console.error('清除歷史失敗', err);
+    }
+}
+
+
+// 刪除原有的 getChatStorageKey、loadChatHistory（基於localStorage）、saveChatMessage 等
+
+// 新的 loadChatHistory (異步)
+async function loadChatHistory() {
+    const messages = await loadChatHistoryFromServer();
+    renderChatMessages(messages);
+}
+
+// renderChatMessages 保持不變（但注意 msg.timestamp 現在是毫秒）
+function renderChatMessages(messages) {
+    if (!chatMessagesDiv) chatMessagesDiv = document.getElementById('chatMessages');
+    if (!chatMessagesDiv) return;
+    chatMessagesDiv.innerHTML = '';
+    // 替換原來的 renderChatMessages 函數中的 forEach 循環部分（從 messages.forEach 到 scrollToBottom() 前）
+    messages.forEach(msg => {
+        if (msg.role === 'user') {
+            const div = document.createElement('div');
+            div.className = 'message user';
+            const time = new Date(msg.timestamp).toLocaleTimeString();
+            const content = escapeHtml(msg.content);
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;"><div class="message-bubble" style="flex:1;">${content}<button class="copy-msg-btn" data-msg="${content.replace(/"/g, '&quot;')}" style="background:none; border:none; cursor:pointer; color:#ccc; font-size:12px;">📋</button></div></div>
+                <div class="message-meta">${time}</div>
+            `;
+            chatMessagesDiv.appendChild(div);
+        } else {
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            const thinkHtml = msg.thinkContent ? `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}思考中...</div><div class="think-content">${escapeHtml(msg.thinkContent)}</div></div>` : '';
+            const content = escapeHtml(msg.content);
+            const time = new Date(msg.timestamp).toLocaleTimeString();
+            const renderedContent = renderMarkdown(msg.content);
+            div.innerHTML = thinkHtml + `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                    <div class="message-bubble" style="flex:1;">${renderedContent}<button class="copy-msg-btn" data-msg="${content.replace(/"/g, '&quot;')}" style="background:none; border:none; cursor:pointer; color:#ccc; font-size:12px;">📋</button></div>
+                </div>
+                <div class="message-meta">${currentAgent} · ${time}</div>
+            `;
+            chatMessagesDiv.appendChild(div);
+        }
+    });
+    // 之後加上綁定複製按鈕事件的代碼（放在 forEach 外面）
+    document.querySelectorAll('.copy-msg-btn').forEach(btn => {
+        btn.removeEventListener('click', copyMsgHandler);
+        btn.addEventListener('click', copyMsgHandler);
+    });
+    // 重新構建快速跳轉面板
+    if (quickJumpPanel) quickJumpPanel.remove();
+    buildQuickJumpPanel();
+    scrollToBottom();
+    // 更新滾動按鈕狀態
+    if (typeof scrollBtn !== 'undefined' && scrollBtn) {
+        const isAtBottom = chatMessagesDiv.scrollHeight - chatMessagesDiv.scrollTop - chatMessagesDiv.clientHeight < 10;
+        scrollBtn.style.display = isAtBottom ? 'none' : 'flex';
+    }
+}
+
+// 添加用戶消息並保存到服務器
+async function addUserMessageAndSave(content) {
+    const msg = {
+        role: 'user',
+        content: content,
+        thinkContent: null,
+        timestamp: Date.now()
+    };
+    await saveChatMessageToServer(msg);
+    const div = document.createElement('div');
+    div.className = 'message user';
+    const escapedContent = escapeHtml(content);   // ✅ 使用參數 content
+    div.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;"><div class="message-bubble" style="flex:1;">${escapedContent}<button class="copy-msg-btn" data-msg="${escapedContent.replace(/"/g, '&quot;')}" style="background:none; border:none; cursor:pointer; color:#ccc; font-size:12px;">📋</button></div></div>
+        <div class="message-meta">${new Date().toLocaleTimeString()}</div>
+    `;
+    const copyBtn = div.querySelector('.copy-msg-btn');
+    copyBtn.addEventListener('click', copyMsgHandler);
+    chatMessagesDiv.appendChild(div);
+    updateQuickJumpItems();
+    scrollToBottom();
+}
+
+// 添加助手消息並保存到服務器
+async function addAssistantMessageAndSave(thinkContent, replyContent) {
+    const msg = {
+        role: 'assistant',
+        content: replyContent,
+        thinkContent: thinkContent || null,
+        timestamp: Date.now()
+    };
+    await saveChatMessageToServer(msg);
+    const div = document.createElement('div');
+    div.className = 'message assistant';
+    // 替換 addAssistantMessageAndSave 函數內的 div.innerHTML 行
+    const content = escapeHtml(replyContent);
+    const thinkHtml = thinkContent ? `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}思考中...</div><div class="think-content">${escapeHtml(thinkContent)}</div></div>` : '';
+    const renderedContent = renderMarkdown(replyContent);
+    div.innerHTML = thinkHtml + `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+            <div class="message-bubble" style="flex:1;">${renderedContent}<button class="copy-msg-btn" data-msg="${content.replace(/"/g, '&quot;')}" style="background:none; border:none; cursor:pointer; color:#ccc; font-size:12px;">📋</button></div>
+        </div>
+        <div class="message-meta">${currentAgent} · ${new Date().toLocaleTimeString()}</div>
+    `;
+    // 在 appendChild 之後添加事件綁定
+    const copyBtn = div.querySelector('.copy-msg-btn');
+    copyBtn.addEventListener('click', copyMsgHandler);
+    chatMessagesDiv.appendChild(div);
+    scrollToBottom();
+}
+
+// 清除所有對話
+async function clearAllChats() {
+    if (confirm(`確定清除「${currentAgent}」的所有對話記錄嗎？`)) {
+        await clearChatHistoryOnServer();
+        await loadChatHistory();   // 重新加載（顯示默認歡迎語）
+    }
+}
+
+    function sendUserMessage(content) {
+        // 1. 清理所有未完成的助手佔位符（meta含"回應中"）
+        document.querySelectorAll('.message.assistant').forEach(el => {
+            const meta = el.querySelector('.message-meta');
+            if (meta && meta.innerText.includes('回應中')) {
+                el.remove();
+            }
+        });
+        // 重置全局變量
+        if (currentAssistantDiv && currentAssistantDiv.parentNode) currentAssistantDiv.remove();
+        currentAssistantDiv = null;
+        currentReplyDiv = null;
+        currentThinkDiv = null;
+
+        // 2. 重置累積變量
+        accumulatedReply = '';
+        accumulatedThink = '';
+
+        // 替換創建 userDiv 的那段代碼
+        const time = new Date().toLocaleTimeString();
+        const escapedContent = escapeHtml(content);   // ✅ 改為新變量名
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user';
+        userDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;"><div class="message-bubble" style="flex:1;">${escapedContent}<button class="copy-msg-btn" data-msg="${escapedContent.replace(/"/g, '&quot;')}" style="background:none; border:none; cursor:pointer; color:#ccc; font-size:12px;">📋</button></div></div>
+            <div class="message-meta">${time}</div>
+        `;
+        chatMessagesDiv.appendChild(userDiv);
+        // 添加事件綁定
+        const copyBtn = userDiv.querySelector('.copy-msg-btn');
+        copyBtn.addEventListener('click', copyMsgHandler);
+
+        // 4. 異步保存用戶消息到服務器（不等待，避免阻塞）
+        saveChatMessageToServer({
+            role: 'user',
+            content: content,
+            thinkContent: null,
+            timestamp: Date.now()
+        }).catch(console.error);
+
+        // 5. 創建助手佔位符（現在肯定在用戶消息下方）
+        const assistantDiv = document.createElement('div');
+        assistantDiv.className = 'message assistant';
+        assistantDiv.innerHTML = `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}思考中...</div><div class="think-content"></div></div>
+                                <div class="message-bubble" style="background:#3a3a3d;"></div>
+                                <div class="message-meta">${currentAgent} · 回應中</div>`;
+        chatMessagesDiv.appendChild(assistantDiv);
+        scrollToBottom();
+
+        currentAssistantDiv = assistantDiv;
+        currentThinkDiv = assistantDiv.querySelector('.think-content');
+        currentReplyDiv = assistantDiv.querySelector('.message-bubble');
+
+        // 6. 發送 socket 消息
+        socket.emit('chat_message', { message: content });
+    }
+
+    
+    function stopGeneration() {
+        if (currentReplyDiv) {
+            socket.emit('stop_generation');
+            const assistantMsg = currentReplyDiv.closest('.message.assistant');
+            if (assistantMsg) {
+                const thinkHeader = assistantMsg.querySelector('.think-container > div:first-child');
+                if (thinkHeader) thinkHeader.innerText = `⏹️ ${currentAgent}已停止回答`;
+            }
+            // 移除 DOM 元素，防止殘留
+            if (currentAssistantDiv) currentAssistantDiv.remove();
+            currentReplyDiv = null;
+            currentThinkDiv = null;
+            currentAssistantDiv = null;
+        }
+    }
+
+    // 文件樹
+    async function fetchTree() {
+        const treeContainer = document.getElementById('tree-root');
+        const haveOnline = document.getElementById('haveOnline');
+
+        
+        if (!treeContainer) return;
+        try {
+            const response = await fetch('/api/tree');
+            const data = await response.json();
+            renderTree(data.tree, treeContainer);
+        } catch (err) {
+            //檢查是否連線失敗
+            treeContainer.innerHTML = '加載失敗';
+            haveOnline.innerHTML = `❌ 被${currentAgent}趕出房間了`;
+        }
+    }
+    function renderTree(nodes, container) {
+        container.innerHTML = '';
+        const ul = document.createElement('ul');
+        nodes.forEach(node => {
+            const li = document.createElement('li');
+            const span = document.createElement('span');
+            span.className = node.is_dir ? 'dir' : 'file';
+            span.innerText = node.name;
+            li.appendChild(span);
+            if (node.is_dir) {
+                const childUl = document.createElement('ul');
+                childUl.style.display = 'none';
+                span.classList.add('collapsed');
+                if (node.children) renderTree(node.children, childUl);
+                li.appendChild(childUl);
+                span.onclick = (e) => {
+                    e.stopPropagation();
+                    const isHidden = childUl.style.display === 'none';
+                    childUl.style.display = isHidden ? 'block' : 'none';
+                    span.classList.toggle('collapsed', !isHidden);
+                };
+            } else {
+                span.onclick = async (e) => {
+                    e.stopPropagation();
+                    await loadFile(node.path, node.name);
+                };
+            }
+            li.onclick = e => e.stopPropagation();
+            ul.appendChild(li);
+        });
+        container.appendChild(ul);
+    }
+    async function loadFile(path, name) {
+        if (!fileContentPre || !imageViewer || !videoViewer || !currentFilenameSpan) return;
+        fileContentPre.style.display = 'block';
+        imageViewer.style.display = 'none';
+        videoViewer.style.display = 'none';
+        currentFilenameSpan.innerText = name;
+        const ext = name.split('.').pop().toLowerCase();
+        const rawUrl = `/api/raw/${encodeURIComponent(path)}`;
+        if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) {
+            imageViewer.src = rawUrl;
+            imageViewer.style.display = 'block';
+            fileContentPre.style.display = 'none';
+        } else if (['mp4','webm','ogg'].includes(ext)) {
+            videoViewer.src = rawUrl;
+            videoViewer.style.display = 'block';
+            fileContentPre.style.display = 'none';
+            videoViewer.load();
+        } else {
+            fileContentPre.innerText = '加載中...';
+            try {
+                const response = await fetch(`/api/file/${encodeURIComponent(path)}`);
+                const data = await response.json();
+                fileContentPre.innerText = data.error ? `錯誤: ${data.error}` : data.content;
+            } catch (err) { fileContentPre.innerText = '連線失敗'; }
+        }
+    }
+    function renderFilesContent() {
+        const container = document.getElementById('toolsContent');
+        container.innerHTML = `
+            <div class="tree-container" id="tree-root">加載中...</div>
+            <div class="media-view">
+                <h3>文件內容: <span id="current-filename" style="color:#4ec9b0;"></span></h3>
+                <pre id="file-content" style="white-space:pre-wrap;"></pre>
+                <img id="image-viewer" style="display:none; max-width:100%;">
+                <video id="video-viewer" controls style="display:none; max-width:100%;"></video>
+            </div>
+        `;
+        fileContentPre = document.getElementById('file-content');
+        imageViewer = document.getElementById('image-viewer');
+        videoViewer = document.getElementById('video-viewer');
+        currentFilenameSpan = document.getElementById('current-filename');
+        fetchTree();
+    }
+    function renderAsciiContent() {
+        document.getElementById('toolsContent').innerHTML = '<iframe src="/ASCII.html" style="width:100%; height:100%; border:none; border-radius:8px;"></iframe>';
+    }
+    function renderSettingsContent() {
+        const container = document.getElementById('toolsContent');
+        const options = modelsList.map((m, idx) => `<option value="${idx}" ${idx === currentModelIndex ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+        container.innerHTML = `
+            <div style="padding:12px;">
+                <h3>⚙️ 系統設定</h3>
+                <div style="margin:16px 0;"><label>🤖 當前模型</label>
+                    <select id="modelSelect" style="width:100%; margin-top:8px; background:#1e1e1e; border:1px solid #4ec9b0; border-radius:20px; padding:6px;">${options}</select>
+                    <button id="applyModelBtn" style="margin-top:8px;">應用模型</button>
+                </div>
+                <div><button id="reloadToolsBtn">🔄 重新加載工具</button></div>
+            </div>
+        `;
+        document.getElementById('applyModelBtn')?.addEventListener('click', () => {
+            const idx = parseInt(document.getElementById('modelSelect').value);
+            switchModel(idx);
+        });
+        document.getElementById('reloadToolsBtn')?.addEventListener('click', async () => {
+            await fetch('/api/reload_tools', { method: 'POST' });
+            alert('工具已重新加載');
+        });
+    }
+
+    function renderMonitorContent() {
+        const container = document.getElementById('toolsContent');
+        container.innerHTML = '<iframe src="/monitor" style="width:100%; height:100%; border:none; border-radius:8px;"></iframe>';
+    }
+
+    function switchTool(tool) {
+        currentTool = tool;
+        document.querySelectorAll('.tools-header-buttons button').forEach(btn => {
+            if (btn.dataset.tool === tool) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+        if (tool === 'files') renderFilesContent();
+        else if (tool === 'ascii') renderAsciiContent();
+        else if (tool === 'settings') renderSettingsContent();
+        else if (tool === 'monitor') renderMonitorContent(); 
+    }
+
+    // 側邊欄拖拽調整寬度
+    function initResize() {
+        const leftSidebar = document.getElementById('agentSidebar');
+        const rightPanel = document.getElementById('toolsPanel');
+        const rightHandle = document.getElementById('right-resize-handle');
+        let startX, startWidth;
+
+        function startDrag(e, isLeft) {
+            startX = e.clientX;
+            startWidth = isLeft ? leftSidebar.clientWidth : rightPanel.clientWidth;
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            function onMouseMove(e) {
+                const dx = e.clientX - startX;
+                let newWidth = startWidth + (isLeft ? dx : -dx);
+                // 側面板（.tools-panel）的最大可拖動寬度
+                newWidth = Math.min(Math.max(newWidth, 60), 1000);
+                if (isLeft) leftSidebar.style.width = newWidth + 'px';
+                else rightPanel.style.width = newWidth + 'px';
+            }
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                document.body.style.userSelect = '';
+            }
+            e.preventDefault();
+        }
+        rightHandle?.addEventListener('mousedown', e => startDrag(e, false));
+    }
+
+    // 側邊欄摺疊/展開 + 手機按鈕
+    function initSidebars() {
+        const leftSidebar = document.getElementById('agentSidebar');
+        const rightPanel = document.getElementById('toolsPanel');
+        const toggleLeft = document.getElementById('toggleAgentSidebar');
+        const toggleRight = document.getElementById('toggleToolsPanel');
+        const mobileLeftBtn = document.getElementById('mobileOpenLeftBtn');
+        const mobileRightBtn = document.getElementById('mobileOpenRightBtn');
+        const isMobile = () => window.innerWidth <= 768;
+
+        // 桌面端摺疊按鈕
+        if (toggleLeft) {
+            toggleLeft.addEventListener('click', () => {
+                if (isMobile()) leftSidebar.classList.toggle('mobile-open');
+                else leftSidebar.classList.toggle('collapsed');
+            });
+        }
+        if (toggleRight) {
+            toggleRight.addEventListener('click', () => {
+                if (isMobile()) rightPanel.classList.toggle('mobile-open');
+                else rightPanel.classList.toggle('collapsed');
+            });
+        }
+
+        // 手機端專用：點擊聊天區關閉側邊欄
+        if (mobileLeftBtn) {
+            mobileLeftBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                leftSidebar.classList.add('mobile-open');
+            });
+        }
+        if (mobileRightBtn) {
+            mobileRightBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                rightPanel.classList.add('mobile-open');
+            });
+        }
+        // 點擊聊天主區域關閉所有浮動面板（手機）
+        document.querySelector('.chat-main')?.addEventListener('click', () => {
+            if (isMobile()) {
+                leftSidebar.classList.remove('mobile-open');
+                rightPanel.classList.remove('mobile-open');
+            }
+        });
+        // 窗口大小變化時，如果回到桌面模式，需要移除手機樣式
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) {
+                leftSidebar.classList.remove('mobile-open');
+                rightPanel.classList.remove('mobile-open');
+            }
+        });
+    }
+
+    // Socket 事件
+    socket.on('chat_stream', (data) => {
+        if (data.type === 'think') {
+            if (currentThinkDiv) {
+                currentThinkDiv.innerText += data.content;
+                accumulatedThink += data.content;
+                scrollToBottom();
+            }
+        } else if (data.type === 'reply') {
+            if (currentReplyDiv) {
+                currentReplyDiv.innerText += data.content;
+                accumulatedReply += data.content;
+                scrollToBottom();
+            }
+            // 一旦收到回覆，修改思考區域的標題
+            const assistantMsg = currentReplyDiv?.closest('.message.assistant');
+            if (assistantMsg) {
+                const thinkHeader = assistantMsg.querySelector('.think-container > div:first-child');
+                if (thinkHeader && thinkHeader.innerText.includes('思考中')) {
+                    thinkHeader.innerText = `📝 ${currentAgent}回答：`;
+                }
+            }
+        } else if (data.type === 'done') {
+            if (currentReplyDiv && accumulatedReply) {
+                // 先移除臨時佔位消息
+                if (currentAssistantDiv) currentAssistantDiv.remove();
+                // 再保存最終消息（會自動添加到聊天區域）
+                addAssistantMessageAndSave(accumulatedThink, accumulatedReply);
+            }
+            // 重置所有臨時變量
+            currentThinkDiv = null;
+            currentReplyDiv = null;
+            currentAssistantDiv = null;
+            accumulatedReply = '';
+            accumulatedThink = '';
+        }
+    });
+
+
+    socket.on('stream_stopped', () => console.log('已停止生成'));
+
+    function initChatInput() {
+        const textarea = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const clearBtn = document.getElementById('clearChatBtn');
+        const send = () => {
+            const msg = textarea.value.trim();
+            if (!msg) return;
+            sendUserMessage(msg);
+            textarea.value = '';
+            textarea.style.height = 'auto';
+        };
+        sendBtn.onclick = send;
+        textarea.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+        textarea.oninput = function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 100) + 'px'; };
+        stopBtn.onclick = stopGeneration;
+        clearBtn.onclick = clearAllChats;
+        chatMessagesDiv = document.getElementById('chatMessages');
+        initScrollButton();
+        buildQuickJumpPanel();
+    }
+
+    function copyMsgHandler(e) {
+        const btn = e.currentTarget;
+        const text = btn.getAttribute('data-msg');
+        if (text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.innerText;
+                btn.innerText = '✓';
+                setTimeout(() => { btn.innerText = originalText; }, 1000);
+            }).catch(() => alert('複製失敗'));
+        }
+        e.stopPropagation();
+    }
+
+
+    async function init() {
+        await loadAgentList();
+        await loadModels();
+        initResize();
+        initSidebars();
+        initChatInput();
+        document.querySelectorAll('.tools-header-buttons button').forEach(btn => {
+            btn.addEventListener('click', () => switchTool(btn.dataset.tool));
+        });
+        switchTool('files');
+        await loadChatHistory();
+    }
+    init();
+</script>
+</body>
+</html>

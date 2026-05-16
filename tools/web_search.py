@@ -2,12 +2,12 @@
 # 字典: PLUGIN_INFO
 # 用途: 定義搜尋工具與主程式、意圖辨識系統之間的介面。主程式透過它：
 #         1. 註冊 Telegram 命令 /search
-#         2. 建立自然語言關鍵詞映射 ("搜尋" → /search)
-#         3. 提供給 AI 的工具描述 (tool_schema) 以便未來 LLM 自動調用
-#         4. 指定執行函數 handle_web_search 與結果自然化函數 naturalize_search_result
+#         2. 建立自然語言關鍵詞對映 ("搜尋" → /search)
+#         3. 提供給 AI 的工具描述 (tool_schema) 以便未來 LLM 自動呼叫
+#         4. 指定執行函式 handle_web_search 與結果自然化函式 naturalize_search_result
 # 設計:
 #   - naturalize_func 指向本模組內的 naturalize_search_result，讓搜尋結果能以自然口語呈現。
-#   - tool_schema 遵循 JSON Schema 規範，將來可讓 AI 判斷何時需要搜尋並填入參數。
+#   - tool_schema 遵循 JSON Schema 規範，將來可讓 AI 判斷何時需要搜尋並填入引數。
 # ------------------------------------------------------------------------------------ #
 PLUGIN_INFO = {
     "command": "/search",
@@ -15,10 +15,9 @@ PLUGIN_INFO = {
     "handler": "handle_web_search",
     "description": "搜尋網頁（由 DuckDuckGo 提供）",
     "intent_keywords": [
-        ("上網找", "/search"),
-        ("搜尋", "/search")
+        ("/搜", "/search")
     ],
-    "updata": "202505081143",
+    "updata": "202605170422",
     "naturalize": True,
     "naturalize_func": "naturalize_search_result",
     "tool_schema": {
@@ -68,23 +67,23 @@ from typing import Union, Dict, List
 
 
 # ------------------------------------------------------------------------------------ #
-# 函數: load_agent_config_value
-# 用途: 從當前 agent 的配置文件中讀取指定 key 的值（例如 TAVILY_API_KEY）。
+# 函式: load_agent_config_value
+# 用途: 從當前 agent 的配置檔案中讀取指定 key 的值（例如 TAVILY_API_KEY）。
 # 設計:
-#   利用主程式設定的環境變數 AD_AGENT_NAME 和 AD_AgiName 找到對應的配置檔。
+#   利用主程式設定的環境變數 AD_MOK_AGENT_NAME 和 AD_AgiName 找到對應的配置檔。
 #   逐行掃描，支援註解 (#) 和簡單的 key=value 格式，不回傳多餘空格。
 #   這樣每個工具都能獨立讀取 agent 專屬的設定，無需修改主程式。
 # 返回:
 #   str: 找到的值；若找不到則回空字串。
 # ------------------------------------------------------------------------------------ #
 def load_agent_config_value(key: str) -> str:
-    """從當前 agent 的配置文件中讀取指定 key 的值"""
-    agent_name = os.environ.get("AD_AGENT_NAME", "")
-    if not agent_name:
+    """從當前 agent 的配置檔案中讀取指定 key 的值"""
+    MOK_AGENT_NAME = os.environ.get("AD_MOK_AGENT_NAME", "")
+    if not MOK_AGENT_NAME:
         return ""
-    # MokAgi 項目名默認為 MokAgi
+    # MokAgi 專案名預設為 MokAgi
     mokagi_name = os.environ.get("AD_AgiName", "MokAgi")
-    config_path = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", f".{agent_name}")
+    config_path = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", f".{MOK_AGENT_NAME}")
     if not os.path.exists(config_path):
         return ""
     try:
@@ -142,11 +141,11 @@ TAVILY_API_KEY = False
 
 
 # ------------------------------------------------------------------------------------ #
-# 函數: check_search_deps
+# 函式: check_search_deps
 # 用途: 一次性檢查所有搜尋依賴（Tavily 庫、API Key、DuckDuckGo 庫），
 #       若缺少任何一項則返回清晰的安裝指引（附帶複製按鈕），否則返回 None 表示就緒。
 # 設計:
-#   在 handle_web_search 一開始調用，確保搜尋前環境完整。
+#   在 handle_web_search 一開始呼叫，確保搜尋前環境完整。
 #   如果檢查失敗，直接回傳錯誤訊息，不執行搜尋，避免後續不明錯誤。
 #   同時將讀取到的 API Key 存入全域變數供後續使用。
 # 返回:
@@ -154,7 +153,7 @@ TAVILY_API_KEY = False
 # ------------------------------------------------------------------------------------ #
 def check_search_deps() -> str | None:
     global TAVILY_API_KEY
-    """檢查搜索依賴，返回錯誤消息或None（表示就緒）"""
+    """檢查搜尋依賴，返回錯誤訊息或None（表示就緒）"""
     missing = []
     # 檢查 Tavily 庫
     try:
@@ -162,7 +161,7 @@ def check_search_deps() -> str | None:
     except ImportError:
         missing.append("tavily-python 未安裝")
 
-    # 檢查 Tavily API Key（從配置文件讀取）
+    # 檢查 Tavily API Key（從配置檔案讀取）
     TAVILY_API_KEY = load_agent_config_value("TAVILY_API_KEY")
     if not TAVILY_API_KEY:
         missing.append("Tavily API Key 未配置")
@@ -176,16 +175,16 @@ def check_search_deps() -> str | None:
     if not missing:
         return None
     
-    # 構建錯誤消息
-    msg = "❌ 以下搜索依賴缺失，請依序處理：\n\n"
+    # 構建錯誤訊息
+    msg = "❌ 以下搜尋依賴缺失，請依序處理：\n\n"
     for item in missing:
         if "tavily-python" in item:
             msg += "🔹 安裝 Tavily 庫：\n<pre>/admin pip install tavily-python</pre>\n\n"
         elif "Tavily API Key" in item:
-            msg += "🔹 配置 Tavily API Key：\n在環境變量中設置 TAVILY_API_KEY (註冊於 https://app.tavily.com)\n例如在 ~/.MokAgi/.anget 中添加：\n<pre>TAVILY_API_KEY=tvly-你的key</pre>\n\n"
+            msg += "🔹 配置 Tavily API Key：\n在環境變數中設定 TAVILY_API_KEY (註冊於 https://app.tavily.com)\n例如在 ~/.MokAgi/.anget 中新增：\n<pre>TAVILY_API_KEY=tvly-你的key</pre>\n\n"
         elif "duckduckgo-search" in item:
             msg += "🔹 安裝 DuckDuckGo 搜尋庫：\n<pre>/admin pip install duckduckgo-search</pre>\n\n"
-    msg += "完成後請 /reload 重新加載工具。"
+    msg += "完成後請 /reload 重新載入工具。"
     return msg
 
 
@@ -212,11 +211,11 @@ def check_search_deps() -> str | None:
 
 
 # ------------------------------------------------------------------------------------ #
-# 函數: _do_search_via_tavily
+# 函式: _do_search_via_tavily
 # 用途: 使用 Tavily API 執行搜尋，回傳統一的 JSON 結構。
 # 設計:
 #   從全域變數 TAVILY_API_KEY 初始化 TavilyClient。
-#   因為 TavilyClient.search 是同步函數，使用 asyncio.to_thread 以免阻塞事件循環。
+#   因為 TavilyClient.search 是同步函式，使用 asyncio.to_thread 以免阻塞事件迴圈。
 #   回傳格式與 DuckDuckGo 搜尋一致，便於合併。
 # 返回:
 #   dict: {"success": bool, "query": ..., "total": ..., "results": [...]}
@@ -226,12 +225,12 @@ async def _do_search_via_tavily(params: dict) -> dict:
 
     from tavily import TavilyClient
 
-    # 初始化 Tavily 客戶端（API Key 從環境變量或配置文件讀取）
+    # 初始化 Tavily 客戶端（API Key 從環境變數或配置檔案讀取）
     #TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
     tavily_client = TavilyClient(api_key=TAVILY_API_KEY) if TAVILY_API_KEY else None
 
     if not tavily_client:
-        return {"success": False, "error": "Tavily API Key 未配置，請在環境變量中設置 TAVILY_API_KEY"}
+        return {"success": False, "error": "Tavily API Key 未配置，請在環境變數中設定 TAVILY_API_KEY"}
 
     query = params.get("query", "")
     if not query:
@@ -244,7 +243,7 @@ async def _do_search_via_tavily(params: dict) -> dict:
     logging.info(f"Searching via Tavily: {query}, depth: {search_depth}")
 
     try:
-        # TavilyClient.search 是同步的，在線程池中執行以避免阻塞
+        # TavilyClient.search 是同步的，線上程池中執行以避免阻塞
         response = await asyncio.to_thread(
             tavily_client.search,
             query,
@@ -297,14 +296,14 @@ async def _do_search_via_tavily(params: dict) -> dict:
 
 
 # ------------------------------------------------------------------------------------ #
-# 函數: _do_search_duckduckgo_async
-# 用途: 這是為了不修改太多舊程式碼的方便操作，將同步的 DuckDuckGo 搜尋包裝成異步，以便與 Tavily 併發執行。
+# 函式: _do_search_duckduckgo_async
+# 用途: 這是為了不修改太多舊程式碼的方便操作，將同步的 DuckDuckGo 搜尋包裝成非同步，以便與 Tavily 併發執行。
 # ------------------------------------------------------------------------------------ #
 async def _do_search_duckduckgo_async(params: dict) -> dict:
-    """異步包裝 DuckDuckGo 搜索，以便併發執行"""
+    """非同步包裝 DuckDuckGo 搜尋，以便併發執行"""
     return await asyncio.to_thread(_do_search_duckduckgo, params)
 # ------------------------------------------------------------------------------------ #
-# 函數: _do_search_duckduckgo
+# 函式: _do_search_duckduckgo
 # 用途: 使用 DuckDuckGo 執行搜尋，支援重試、時間範圍過濾與地區自動判斷。
 # 設計:
 #   當查詢包含中文時，自動使用香港繁體地區 (hk-tzh) 以提升相關性。
@@ -312,6 +311,7 @@ async def _do_search_duckduckgo_async(params: dict) -> dict:
 #   遇到 HTTP 202/429 時會指數退避重試，最多重試 3 次。
 # 返回:
 #   dict: 與 Tavily 相同的標準結構。
+# 每個結果的 body 截斷為 200 字符
 # ------------------------------------------------------------------------------------ #
 def _do_search_duckduckgo(params: dict, max_retries: int = 3) -> dict:
     """
@@ -331,7 +331,7 @@ def _do_search_duckduckgo(params: dict, max_retries: int = 3) -> dict:
 
     tl = time_map.get(timelimit) if timelimit else None
 
-    # 優先使用 params 中的 region，若無則根據查詢智能判斷
+    # 優先使用 params 中的 region，若無則根據查詢智慧判斷
     region = params.get("region", None)
     if not region:
         # 若查詢中包含中文，則預設使用香港地區設定
@@ -439,7 +439,7 @@ def _do_search_duckduckgo(params: dict, max_retries: int = 3) -> dict:
 
 
 # ------------------------------------------------------------------------------------ #
-# 函數: naturalize_search_result
+# 函式: naturalize_search_result
 # 用途: 將搜尋結果 JSON 轉換為自然口語的回覆，包含總結和完整連結列表。
 # 設計:
 #   取前三個標題讓 LLM 生成 1-2 句口語總結，減少 token 消耗並確保穩定性。
@@ -448,13 +448,14 @@ def _do_search_duckduckgo(params: dict, max_retries: int = 3) -> dict:
 #   最後將所有結果的連結以編號清單附加在回覆結尾。
 # 返回:
 #   str: 包含自然語言總結與連結的最終回覆字串。
+# "num_predict": 1000 對整個回覆的總長度大約能生成 500~1000 箇中文字
 # ------------------------------------------------------------------------------------ #
 async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: str, model_name: str, temp_msg=None, context=None) -> str:
     """
-    搜索專用的自然化函數，支持流式顯示思考過程。
-    返回包含概述和鏈接列表的最終回覆字符串。
+    搜尋專用的自然化函式，支援流式顯示思考過程。
+    返回包含概述和連結列表的最終回覆字串。
     """
-    # 解析 JSON，提取標題和所有鏈接
+    # 解析 JSON，提取標題和所有連結
     titles = []
     all_links = []
     try:
@@ -465,19 +466,19 @@ async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: 
             for item in results[:3]:
                 titles.append(item.get("title", ""))
         else:
-            return "這次搜索沒有找到結果。"
+            return "這次搜尋沒有找到結果。"
     except Exception as e:
         logging.warning(f"解析 JSON 失敗: {e}")
-        return "搜索結果解析失敗。"
+        return "搜尋結果解析失敗。"
 
     if not titles:
         return "未找到相關結果。"
 
     # 給 LLM 的 prompt
     title_text = "、".join(titles)
-    prompt = f"""用戶搜索：「{user_text}」
-搜索到的部分文章標題：{title_text}
-請用自然口語，用1-2句告訴用戶找到了哪些內容（可以提及1-2個標題的關鍵詞），不要編造細節。加入建議用戶之後的操作，直接回復："""
+    prompt = f"""使用者搜尋：「{user_text}」
+搜尋到的部分文章標題：{title_text}
+請用自然口語，用2-3句告訴使用者找到了哪些內容（可以提及1-2個標題的關鍵詞），不要編造細節。加入建議使用者之後的操作，直接回復："""
 
     # 流式請求 Ollama
     payload = {
@@ -491,6 +492,11 @@ async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: 
         }
     }
 
+    print(f'''
+============ tools web_search prompt ============
+    {prompt}
+========================
+    ''')
     accumulated = ""
     if temp_msg and context:
         last_update = 0
@@ -591,45 +597,63 @@ async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: 
 
 
 # ------------------------------------------------------------------------------------ #
-# 函數: handle_web_search
-# 用途: 搜尋工具的總入口，負責解析參數、檢查依賴、併發調用 Tavily 和 DuckDuckGo，
+# 函式: handle_web_search
+# 用途: 搜尋工具的總入口，負責解析引數、檢查依賴、併發呼叫 Tavily 和 DuckDuckGo，
 #       合併並去重結果，最後回傳標準 JSON 字串。
 # 設計:
-#   先調用 check_search_deps() 確保所有依賴就緒，否則直接返回指引訊息。
-#   支援兩種輸入格式：命令列字串（"/search 關鍵詞 y"）與字典（JSON 工具調用）。
+#   先呼叫 check_search_deps() 確保所有依賴就緒，否則直接返回指引訊息。
+#   支援兩種輸入格式：命令列字串（"/search 關鍵詞 y"）與字典（JSON 工具呼叫）。
 #   使用 asyncio.gather 併發兩個搜尋來源，提升速度，並設定 return_exceptions 防止單一失敗中斷流程。
 #   合併結果時進行簡單 URL 去重，若無任何結果則回傳錯誤。
 # 返回:
-#   str: JSON 字符串，包含 success、results 等欄位。
+#   str: JSON 字串，包含 success、results 等欄位。
 # ------------------------------------------------------------------------------------ #
 async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
     """
-    處理搜索請求，同時使用 Tavily 和 DuckDuckGo，合併結果。
-    支持命令列字串 /search 關鍵詞 [d|w|m|y]
-    以及 dict 參數（JSON 工具調用）
+    處理搜尋請求，同時使用 Tavily 和 DuckDuckGo，合併結果。
+    支援命令列字串 /search 關鍵詞 [d|w|m|y]
+    以及 dict 引數（JSON 工具呼叫）
     """
 
     dep_error = check_search_deps()
     if dep_error:
         return dep_error
 
+    if not args:
+
+        help_text = f'''
+    {PLUGIN_INFO["icon"]} 搜尋使用說明：
+
+        搜尋網頁（由 DuckDuckGo 、 TAVILY(需API)提供）
+        返回標題、摘要與連結。可指定時間範圍
+        <pre>搜尋 [關鍵詞] [時間篩選]</pre>
+        例：
+        <pre>搜尋 香港新聞 w</pre>
+        <pre>/search 香港新聞 w</pre>
+        時間篩選:
+        "d": "天", "w": "週", "m": "月", "y": "年"
+
+        =====
+        🧩 自然語言意圖辨識：
+    '''
+                # 動態新增 intent_keywords（不轉義）
+        for keyword, cmd in PLUGIN_INFO["intent_keywords"]:
+            help_text += f'   "{keyword}" → {cmd}\n'
+        return help_text
+
+
     params = {}
 
-    # 參數解析
+    # 引數解析
     if isinstance(args, dict):
         params = args
     else:
         parts = args.strip().split()
-        if not parts:
-            return json.dumps({
-                "success": False,
-                "error": "請提供搜尋關鍵詞，例如： <pre>搜尋 香港新聞 w</pre> <pre>/search 香港新聞 w</pre> ",
-                "help": {
-                    "command": "/search",
-                    "usage": "[關鍵詞] [時間篩選]",
-                    "time_options": {"d": "天", "w": "週", "m": "月", "y": "年"}
-                }
-            }, ensure_ascii=False)
+        
+
+
+
+
 
         time_map = {"d": "d", "w": "w", "m": "m", "y": "y"}
         timelimit = None
@@ -646,12 +670,12 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
 
 
 
-    # 複製 params，因為兩個後端可能接受不同參數
+    # 複製 params，因為兩個後端可能接受不同引數
     # DuckDuckGo 需要 timelimit，Tavily 不需要
     ddg_params = params.copy()
     tavily_params = {"query": params["query"]}   # Tavily 只使用 query，忽略 timelimit
 
-    # 併發調用兩個搜索
+    # 併發呼叫兩個搜尋
     results_tavily, results_ddg = await asyncio.gather(
         _do_search_via_tavily(tavily_params),
         _do_search_duckduckgo_async(ddg_params),
@@ -678,7 +702,7 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
     elif isinstance(results_ddg, dict) and not results_ddg.get("success"):
         errors.append(f"DuckDuckGo: {results_ddg.get('error', '未知錯誤')}")
 
-    # 去重（簡單按鏈接去重，可選）
+    # 去重（簡單按連結去重，可選）
     seen_urls = set()
     unique_items = []
     for item in all_items:
@@ -693,11 +717,11 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
             "query": params["query"],
             "total": len(unique_items),
             "results": unique_items,
-            "errors": errors if errors else None   # 附帶錯誤信息，便於調試，但不會影響自然化
+            "errors": errors if errors else None   # 附帶錯誤資訊，便於除錯，但不會影響自然化
         }, ensure_ascii=False)
     else:
         return json.dumps({
             "success": False,
-            "error": "所有搜索源均未返回結果",
+            "error": "所有搜尋源均未返回結果",
             "details": errors
         }, ensure_ascii=False)

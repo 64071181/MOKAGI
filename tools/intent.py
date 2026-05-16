@@ -32,7 +32,21 @@ PLUGIN_INFO = {
     "icon":"🧩",
     "description": "自然語言意圖辨識 (自動轉換指令，支援動態新增外掛)",
     "handler": "dummy_handler",
-    "update": "202505081143"
+    "tool_schema": {
+        "name": "intent",
+        "description": "內部意圖識別引擎，用於將自然語言轉換為命令，通常不需要直接調用。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "需要識別的用戶輸入文本"
+                }
+            },
+            "required": ["text"]
+        }
+    },
+    "update": "202605170422"
 }
 
 
@@ -85,6 +99,9 @@ _model_name = ""
 #     2. 元組 (關鍵詞, 命令): ("記住", "/memory remember") → 明確指定完整命令
 #   若工具未定義 intent_keywords，則自動從工具的描述文字中提取中文字詞當作關鍵詞（較弱）。
 #   這樣設計是為了讓使用者能夠用自然語言觸發工具，同時支援工具的獨立定義，無需修改意圖模組。
+# 參數:
+#   cmd_map: dict {命令字串: handler函數}，由主程式提供。
+#   tools: dict {模組名: 模組物件}，包含所有已載入的外掛。
 # 返回:
 #   dict: { "關鍵詞": "/完整命令" }
 # ------------------------------------------------------------------------------------ #
@@ -142,7 +159,6 @@ def build_keyword_map(cmd_map: dict, tools: dict) -> Dict[str, str]:
 
 
 
-
 # ------------------------------------------------------------------------------------ #
 # 函數: rule_based_intent
 # 用途: 根據預先建立的關鍵字映射表，快速判斷使用者輸入是否命中某個工具的關鍵詞。
@@ -150,6 +166,9 @@ def build_keyword_map(cmd_map: dict, tools: dict) -> Dict[str, str]:
 #   這層規則匹配比 LLM 快且免費，適合處理常見的簡單命令（如「搜尋」、「記住」、「日誌」）。
 #   當關鍵詞出現在使用者訊息中，就提取掉關鍵詞後的剩餘文字作為參數。
 #   注意：如果多個關鍵詞重疊，只會匹配第一個找到的，順序取決於工具載入順序。
+# 參數:
+#   user_text: 使用者輸入的原始字串。
+#   kw_map: build_keyword_map 建立的關鍵詞映射表。
 # 返回:
 #   tuple (完整命令, 參數字串) 或 (None, None)
 # ------------------------------------------------------------------------------------ #
@@ -190,8 +209,6 @@ async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
 
 
 
-
-
 # ------------------------------------------------------------------------------------ #
 # 函數: llm_intent
 # 用途: 當規則匹配失敗時，使用本地 LLM (Ollama) 進行意圖分類，輸出 JSON 格式的命令。
@@ -199,7 +216,13 @@ async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
 #   動態生成 prompt，列出所有可用的命令及其說明，要求 LLM 輸出 {"command": ..., "args": ...}。
 #   這樣即使使用者說法稍微變化，也能被正確識別，而不需要逐一維護大量規則。
 #   使用較低的 temperature (0.1) 以保證輸出穩定性，並限制生成 token 數量以加速回應。
-#   如果 LLM 失敗或回傳格式不正確，則返回 (None, None) 讓上層繼續處理（例如自然語言回答）。
+#   如果 LLM 失敗或回傳格式不正確，則返回 (None, None) 讓上層繼續處理。
+# 參數:
+#   user_text: 使用者輸入。
+#   cmd_map: 命令映射表。
+#   tools: 所有工具模組。
+#   ollama_api: Ollama API 端點。
+#   model_name: 使用的模型名稱。
 # 返回:
 #   tuple (完整命令, 參數字串) 或 (None, None)
 # ------------------------------------------------------------------------------------ #
@@ -237,7 +260,7 @@ async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str
         "model": model_name,
         "prompt": prompt,
         "stream": False,
-        "options": {"num_predict": 120, "temperature": 0.1}
+        "options": {"num_predict": 1000, "temperature": 0.1}
     }
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -303,7 +326,6 @@ async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str
 
 
 
-
 # ------------------------------------------------------------------------------------ #
 # 函數: handle_intent
 # 用途: 主意圖處理入口，由主程式 (MokAgi.py) 在收到使用者訊息且非直接命令時調用。
@@ -316,6 +338,11 @@ async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str
 #      - 若沒有，則直接顯示原始結果或給出失敗提示。
 #   5. 所有過程通過 Telegram 的臨時消息 (temp_msg) 動態更新，讓用戶看到進度。
 #   這樣的設計將意圖辨識、工具調用、結果呈現完全解耦，每個工具只需專注於自己的業務邏輯和呈現方式。
+# 參數:
+#   update, context: Telegram 訊息上下文。
+#   user_text: 使用者輸入。
+#   chat_id: 對話 ID。
+#   cmd_map, tools, ollama_api, model_name: 主程式傳入的環境。
 # 返回:
 #   bool: True 表示已處理該消息，False 表示未命中任何意圖（應交由默認的對話處理）
 # ------------------------------------------------------------------------------------ #
@@ -490,6 +517,11 @@ async def handle_intent(update, context, user_text: str, chat_id: int,cmd_map: d
 # 用途: 佔位用的工具處理函數，當使用者直接發送 /intent 命令時，給予提示訊息。
 #       實際上意圖辨識功能是透過 handle_intent 被主程式調用，而不是由使用者直接發送 /intent。
 # 設計: 簡單回覆一句說明，引導使用者用自然語言互動而非直接操作此命令。
+# 參數:
+#   args: 命令參數（未使用）。
+#   chat_id: 對話 ID（未使用）。
+# 返回:
+#   str: 提示訊息。
 # ------------------------------------------------------------------------------------ #
 async def dummy_handler(args: str, chat_id: str = None):
     return "請使用自然語言觸發意圖辨識，例如「記得我喜歡喝咖啡」"
