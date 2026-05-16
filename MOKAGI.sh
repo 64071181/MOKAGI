@@ -23,6 +23,7 @@ MOKAGIName="mok"                      # 與 mokagi.py 中的 MOKAGI_home 一致
 PROJECT_DIR="${HOME}/.${MOKAGIName}"  # ~/.mok
 BOT_SCRIPT="${PROJECT_DIR}/mokagi.py" # 核心引擎（非直接啟動，僅供參考）
 
+MOK_AGENT_NAME="default"
 #  核心引擎 Github根路徑
 GITHUB_REPO_RAW="https://raw.githubusercontent.com/64071181/MOKAGI/refs/heads/main"
 # 工具庫
@@ -126,6 +127,7 @@ if [ ${#valid_configs[@]} -eq 0 ]; then
     curl -sL "${GITHUB_REPO_RAW}/env.env" -o "${PROJECT_DIR}/.${MOK_AGENT_NAME_INPUT}"
     # 替換佔位符（注意 env.env 中的 __MOK_AGENT_NAME_PLACEHOLDER__）
     sed -i "s/__MOK_AGENT_NAME_PLACEHOLDER__/${MOK_AGENT_NAME_INPUT}/g" "${PROJECT_DIR}/.${MOK_AGENT_NAME_INPUT}"
+    MOK_AGENT_NAME="${MOK_AGENT_NAME_INPUT}"
 elif [ ${#valid_configs[@]} -eq 1 ]; then
     ENV_FILE="${valid_configs[0]}"
     echo -e "${GREEN}使用現有設定檔：${ENV_FILE}${NC}"
