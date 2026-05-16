@@ -130,6 +130,7 @@ if [ ${#valid_configs[@]} -eq 0 ]; then
     MOK_AGENT_NAME="${MOK_AGENT_NAME_INPUT}"
 elif [ ${#valid_configs[@]} -eq 1 ]; then
     ENV_FILE="${valid_configs[0]}"
+    MOK_AGENT_NAME=$(get_agent_name "$ENV_FILE")
     echo -e "${GREEN}使用現有設定檔：${ENV_FILE}${NC}"
 else
     echo -e "${YELLOW}發現多個設定檔：${NC}"
@@ -139,6 +140,7 @@ else
     read -p "請選擇要使用的設定檔編號: " cfg_choice
     if [[ "$cfg_choice" =~ ^[0-9]+$ ]] && [ "$cfg_choice" -ge 1 ] && [ "$cfg_choice" -le ${#valid_configs[@]} ]; then
         ENV_FILE="${valid_configs[$((cfg_choice-1))]}"
+        MOK_AGENT_NAME=$(get_agent_name "$ENV_FILE")
         echo -e "${GREEN}選擇設定檔：${ENV_FILE}${NC}"
     else
         echo -e "${RED}無效選擇，退出。${NC}"
