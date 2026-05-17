@@ -195,9 +195,20 @@ async def call_llm(
 def build_tool_definitions() -> List[dict]:
     """從所有已加載的工具中收集 tool_schema，用於 LLM 工具調用"""
     schemas = []
-    for mod in tool_handler.get_tools().values():
-        if hasattr(mod, "PLUGIN_INFO") and "tool_schema" in mod.PLUGIN_INFO:
-            schemas.append(mod.PLUGIN_INFO["tool_schema"])
+    tools_dict = tool_handler.get_tools()
+    print(f"DEBUG: 工具数量 = {len(tools_dict)}")
+    for name, mod in tools_dict.items():   # 注意这里使用 .items() 同时获取名称和模块
+        print(f"DEBUG: 检查模块 {name}")
+        if hasattr(mod, "PLUGIN_INFO"):
+            print(f"  -> 有 PLUGIN_INFO, 键: {list(mod.PLUGIN_INFO.keys())}")
+            if "tool_schema" in mod.PLUGIN_INFO:
+                schemas.append(mod.PLUGIN_INFO["tool_schema"])
+                print(f"  -> 已添加 tool_schema")
+            else:
+                print(f"  -> 警告: 缺少 tool_schema 键")
+        else:
+            print(f"  -> 警告: 没有 PLUGIN_INFO 属性")
+    print(f"DEBUG: 最终收集到 {len(schemas)} 个 tool_schema")
     return schemas
 
 def extract_tool_call(response_text: str) -> Optional[dict]:
