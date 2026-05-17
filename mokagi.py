@@ -1,5 +1,5 @@
 """
-202605170422
+202605171733
 mokagi.py - 統一 AI 對話核心模塊
 
 設計目標：
@@ -138,12 +138,11 @@ async def call_llm(
     stream: bool = False,
     tools_def: Optional[List[dict]] = None,
     **override_options
-) -> Union[str, AsyncGenerator[str, None]]:
+) -> Union[str, AsyncGenerator[dict, None]]:
     """
     統一的 Ollama 調用接口。
-    - 如果 stream=True，返回異步生成器，yield 每個 token。
+    - 如果 stream=True，返回異步生成器，yield 每個 token（含 type）。
     - 如果 stream=False，返回完整字符串。
-    - tools_def 會被嵌入到 prompt 中（簡單方式），不改變 API 格式。
     """
     options = OLLAMA_OPTIONS.copy()
     options.update(override_options)
@@ -152,6 +151,8 @@ async def call_llm(
         tools_desc = json.dumps(tools_def, ensure_ascii=False, indent=2)
         full_prompt = (
             "你是一個智能助手，可以調用以下工具來幫助用戶。\n"
+            "**重要：僅當用戶的訊息中明確表達了要執行某個操作（例如「搜尋」、「記住」、「讀取檔案」、「切換模型」等）時，才輸出工具調用 JSON。**\n"
+            "對於普通的問候、閒聊或沒有明確操作意圖的訊息，請直接以自然語言回覆，絕對不要輸出 JSON。\n\n"
             "如果需要調用工具，請只輸出一個 JSON 對象，格式如下：\n"
             '{"name": "工具名稱", "arguments": {...}}\n'
             "如果不需要調用工具，請直接以自然語言回答。\n\n"
@@ -165,28 +166,52 @@ async def call_llm(
         "options": options
     }
 
-    # 單次 LLM 調用確實需要超過 120 秒的超時。
-    async with httpx.AsyncClient(timeout=120) as client:
-        if stream:
-            async def stream_gen():
-                async with client.stream("POST", OLLAMA_API, json=payload) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line)
-                            if 'response' in chunk:
-                                yield chunk['response']
-                            if chunk.get('done'):
-                                break
-                        except:
-                            continue
-            return stream_gen()
-        else:
+    if stream:
+        async def stream_gen():
+            # 將 client 的創建放在生成器內部，確保其生命週期覆蓋整個流式請求
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+                try:
+                    async with client.stream("POST", OLLAMA_API, json=payload) as resp:
+                        resp.raise_for_status()
+                        async for line in resp.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                chunk = json.loads(line)
+                                # 處理 thinking
+                                if 'thinking' in chunk and chunk['thinking']:
+                                    yield {"type": "think", "content": chunk['thinking']}
+                                # 處理 response
+                                if 'response' in chunk and chunk['response']:
+                                    yield {"type": "reply", "content": chunk['response']}
+                                if chunk.get('done'):
+                                    break
+                            except json.JSONDecodeError:
+                                logging.warning(f"Invalid JSON line: {line[:100]}")
+                                continue
+                except httpx.TimeoutException:
+                    logging.error("Ollama 請求超時")
+                    yield {"type": "reply", "content": "❌ 模型響應超時，請稍後重試。"}
+                except httpx.HTTPStatusError as e:
+                    logging.error(f"HTTP 錯誤: {e.response.status_code}")
+                    yield {"type": "reply", "content": f"❌ HTTP 錯誤: {e.response.status_code}"}
+                except Exception as e:
+                    logging.exception("流式生成異常")
+                    yield {"type": "reply", "content": f"❌ 生成失敗: {str(e)}"}
+
+        return stream_gen()
+    else:
+        # 非流式模式，保持簡單
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
             resp = await client.post(OLLAMA_API, json=payload)
             resp.raise_for_status()
             data = resp.json()
             return data.get("response", "").strip()
+
+
+
+
+
 
 # ----------------------------------------------------------------------
 # 工具調用相關函數（複用 tool_handler，並擴展 Function Calling）
@@ -196,19 +221,20 @@ def build_tool_definitions() -> List[dict]:
     """從所有已加載的工具中收集 tool_schema，用於 LLM 工具調用"""
     schemas = []
     tools_dict = tool_handler.get_tools()
-    print(f"DEBUG: 工具数量 = {len(tools_dict)}")
-    for name, mod in tools_dict.items():   # 注意这里使用 .items() 同时获取名称和模块
-        print(f"DEBUG: 检查模块 {name}")
+    
+    #print(f"DEBUG: 工具數量 = {len(tools_dict)}")
+    for name, mod in tools_dict.items():   # 注意這裡使用 .items() 同時獲取名稱和模塊
+        #print(f"DEBUG: 檢查模塊 {name}")
         if hasattr(mod, "PLUGIN_INFO"):
-            print(f"  -> 有 PLUGIN_INFO, 键: {list(mod.PLUGIN_INFO.keys())}")
+            #print(f"  -> 有 PLUGIN_INFO, 鍵: {list(mod.PLUGIN_INFO.keys())}")
             if "tool_schema" in mod.PLUGIN_INFO:
                 schemas.append(mod.PLUGIN_INFO["tool_schema"])
-                print(f"  -> 已添加 tool_schema")
+                #print(f"  -> 已添加 tool_schema")
             else:
-                print(f"  -> 警告: 缺少 tool_schema 键")
+                print(f"  -> 警告: 缺少 tool_schema 鍵")
         else:
-            print(f"  -> 警告: 没有 PLUGIN_INFO 属性")
-    print(f"DEBUG: 最终收集到 {len(schemas)} 个 tool_schema")
+            print(f"  -> 警告: 沒有 PLUGIN_INFO 屬性")
+    #print(f"DEBUG: 最終收集到 {len(schemas)} 個 tool_schema")
     return schemas
 
 def extract_tool_call(response_text: str) -> Optional[dict]:
@@ -221,7 +247,12 @@ def extract_tool_call(response_text: str) -> Optional[dict]:
         json_str = response_text[start:end]
         data = json.loads(json_str)
         if "name" in data and "arguments" in data:
-            return data
+            # 增加：检查工具名称是否真实存在
+            if find_tool_handler(data["name"]) is not None:
+                return data
+            else:
+                logging.warning(f"檢測到不存在的工具名稱: {data['name']}，忽略調用")
+                return None
     except:
         pass
     return None
@@ -359,6 +390,9 @@ async def execute_multi_step(user_id: str, goal: str, forced_steps: Optional[lis
         # 調用 workflow 的 auto_decompose_goal
         steps = await workflow_mod.auto_decompose_goal(goal)
         if not steps:
+            return None
+        # 如果是默認的“無法分解”步驟，則返回 None，讓上層繼續普通聊天
+        if len(steps) == 1 and steps[0].get("name") == "admin" and "無法分解任務" in steps[0].get("args", ""):
             return None
 
     # 收集執行結果
@@ -528,7 +562,7 @@ async def process_message(
     # 流式模式：通過回調發送事件
     try:
         # 發送思考開始（可選）
-        await stream_callback({"type": "think", "content": "正在思考..."})
+        await stream_callback({"type": "think", "content": ""})
 
         # 1. 直接命令（非流式，但結果一次性發送）
         direct_result = await handle_direct_command(text, user_id)
@@ -583,9 +617,12 @@ async def process_message(
         # 使用流式 LLM
         stream_gen = await call_llm(prompt, tools_def=tool_defs, stream=True, temperature=0.7)
         full_reply = ""
-        async for token in stream_gen:
-            full_reply += token
-            await stream_callback({"type": "reply", "content": token})
+        async for item in stream_gen:
+            if item["type"] == "think":
+                await stream_callback({"type": "think", "content": item["content"]})
+            elif item["type"] == "reply":
+                full_reply += item["content"]
+                await stream_callback({"type": "reply", "content": item["content"]})
 
         # 檢查是否需要工具調用（非流式模式下已在之前處理，流式模式下簡單處理：若回覆為 JSON 則嘗試調用）
         tool_call = extract_tool_call(full_reply)

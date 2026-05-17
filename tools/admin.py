@@ -54,7 +54,7 @@ PLUGIN_INFO = {
             "required": ["action"]
         }
     },
-    "updata":"202605170422"
+    "updata":"202605171733"
 }
 
 import os, logging, html, time, hashlib, subprocess, json, httpx
@@ -181,7 +181,7 @@ def is_admin(chat_id: str) -> bool:
 '''
 def is_admin(chat_id: str) -> bool:
     # 網頁版自動放行
-    if chat_id == "web":
+    if chat_id and not chat_id.isdigit():
         return True
     return str(chat_id) == ADMIN_CHAT_ID
 

@@ -7,7 +7,7 @@
 
 #!/usr/bin/env bash
 # "start":"202604231241"
-# "updata":"202605170422"
+# "updata":"202605171733"
 # ==============================================
 # ================== 基礎設定 ===================
 # ==============================================
@@ -413,6 +413,10 @@ echo -e "=========================================="
 echo ""
 echo -e " Telegram 機器人日誌: pm2 logs ${MOKAGIName}_${MOK_AGENT_NAME}"
 echo -e " 網頁介面日誌:        pm2 logs mok_web"
+echo -e " mokagi 日誌:        pm2 logs"
+echo ""
+echo -e " 重啟:               pm2 restart all"
+echo ""
 echo -e " 模型列表:            ollama list"
 echo -e " 強制清理 ollama:     sudo pkill -f 'ollama runner'"
 echo ""

@@ -13,7 +13,7 @@ PLUGIN_INFO = {
     "intent_keywords": [
         ("/取", "/fetch")
     ],
-    "updata": "202605170422",
+    "updata": "202605171733",
     "naturalize_func": "naturalize_fetch_result",
     "tool_schema": {
         "name": "web_fetch",

@@ -2,7 +2,7 @@
 mok_tg.py
 Telegram 適配器 - 支持流式輸出（實時顯示思考過程）
 核心對話能力由 mokagi 提供。
-202605170422
+202605171733
 """
 
 import asyncio
@@ -51,7 +51,7 @@ config, MOK_AGENT_NAME = load_agent_config()
 MOK_TG_TOKEN = config.get("MOK_TG_TOKEN")
 if not MOK_TG_TOKEN:
     raise RuntimeError("配置文件中缺少 MOK_TG_TOKEN")
-ADMIN_CHAT_ID = config.get("MOK_ADMIN_CHAT_ID", "")
+ADMIN_CHAT_ID = config.get("ADMIN_CHAT_ID", "")
 ALLOWED_USERS_STR = config.get("MOK_ALLOWED_USERS", "")
 ALLOWED_USERS = set()
 if ALLOWED_USERS_STR:
@@ -85,42 +85,48 @@ async def stream_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, te
         {"type": "done"}
     """
     try:
+        # 為思考內容建立累積器
+        if not hasattr(stream_callback, "think_content"):
+            stream_callback.think_content = ""
+        if not hasattr(stream_callback, "full_reply"):
+            stream_callback.full_reply = ""
+
         if event["type"] == "think":
-            # 顯示思考過程（實時更新）
+            stream_callback.think_content += event["content"]
+            # 只顯示思考部分（回覆還沒開始）
+            new_text = f"💭\n{stream_callback.think_content}"
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
                 message_id=temp_msg.message_id,
-                text=f"🤔 **思考中：**\n{event['content']}",
+                text=new_text,
                 parse_mode="Markdown"
             )
         elif event["type"] == "reply":
-            # 累積回覆內容
-            if not hasattr(stream_callback, "full_reply"):
-                stream_callback.full_reply = ""
             stream_callback.full_reply += event["content"]
+            # 同時顯示思考內容和回覆內容
+            new_text = f"```🤔\n{stream_callback.think_content}🤔```\n\n💬 回覆：\n{stream_callback.full_reply}"
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
                 message_id=temp_msg.message_id,
-                text=f"💬 **回覆：**\n{stream_callback.full_reply}",
+                text=new_text,
                 parse_mode="Markdown"
             )
         elif event["type"] == "done":
-            final_text = getattr(stream_callback, "full_reply", "（無回覆）")
+            final_reply = stream_callback.full_reply or "（無回覆）"
+            # 最終也保留思考內容
+            new_text = f"```💡\n{stream_callback.think_content}💡```\n\n💬 回覆：\n{final_reply}"
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
                 message_id=temp_msg.message_id,
-                text=f"💬 **回覆：**\n{final_text}",
+                text=new_text,
                 parse_mode="Markdown"
             )
-            if hasattr(stream_callback, "full_reply"):
-                del stream_callback.full_reply
+            # 清理累積器，為下一次對話準備
+            del stream_callback.think_content
+            del stream_callback.full_reply
     except Exception as e:
         logging.error(f"流式回調出錯: {e}")
-        await context.bot.edit_message_text(
-            chat_id=update.effective_chat.id,
-            message_id=temp_msg.message_id,
-            text=f"❌ 流式顯示出錯，但 AI 仍在工作。\n錯誤: {e}"
-        )
+
 
 # ================== Telegram 命令處理器 ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,8 +188,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(UNAUTHORIZED_MSG)
         return
 
+    # ---------- 直接處理以 '/' 開頭的命令 ----------
+    if user_text.startswith('/'):
+        print(f"收到 / 命令: {user_text}")
+        # 導入 tool_handler（已在 mokagi 中導入，這裡直接引用）
+        from mokagi import tool_handler
+        # 調用統一的命令處理函數（非流式）
+        result = await tool_handler.process_message(
+            user_text=user_text,
+            chat_id=chat_id,
+            ollama_api=mokagi.OLLAMA_API,
+            model_name=mokagi.MOK_MODEL_NAME,
+            cmd_map=tool_handler.get_cmd_map(),
+            tools=tool_handler.get_tools()
+        )
+        if result:
+            # 如果命令被處理，直接發送結果並返回
+            await update.message.reply_text(result, parse_mode='HTML')
+            return
+        # 如果沒有匹配的命令，繼續下面的流程（可能當作普通聊天處理）
+        # 注意：這裡不返回，讓後續流程嘗試意圖識別或普通聊天
+
     # 特殊處理：工作流自動執行標記（由 workflow 工具返回）
     if user_text.startswith("WORKFLOW_AUTO_EXEC:"):
+        print(f"收到 工作流: {user_text}")
         parts = user_text.split(":", 3)
         if len(parts) >= 4:
             goal = parts[3].split(":", 1)[0] if ":" in parts[3] else parts[3]
@@ -217,7 +245,7 @@ def main():
     app.add_handler(CommandHandler("clear", clear))
     app.add_handler(CommandHandler("tools", tools_command))
     app.add_handler(CommandHandler("reload", reload))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(update_bot_commands(app))

@@ -17,7 +17,7 @@ PLUGIN_INFO = {
     "intent_keywords": [
         ("/搜", "/search")
     ],
-    "updata": "202605170422",
+    "updata": "202605171733",
     "naturalize": True,
     "naturalize_func": "naturalize_search_result",
     "tool_schema": {
@@ -81,8 +81,8 @@ def load_agent_config_value(key: str) -> str:
     MOK_AGENT_NAME = os.environ.get("AD_MOK_AGENT_NAME", "")
     if not MOK_AGENT_NAME:
         return ""
-    # MokAgi 專案名預設為 MokAgi
-    mokagi_name = os.environ.get("AD_AgiName", "MokAgi")
+    # mok 專案名預設為 mok
+    mokagi_name = os.environ.get("AD_AgiName", "mok")
     config_path = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", f".{MOK_AGENT_NAME}")
     if not os.path.exists(config_path):
         return ""
@@ -181,7 +181,7 @@ def check_search_deps() -> str | None:
         if "tavily-python" in item:
             msg += "🔹 安裝 Tavily 庫：\n<pre>/admin pip install tavily-python</pre>\n\n"
         elif "Tavily API Key" in item:
-            msg += "🔹 配置 Tavily API Key：\n在環境變數中設定 TAVILY_API_KEY (註冊於 https://app.tavily.com)\n例如在 ~/.MokAgi/.anget 中新增：\n<pre>TAVILY_API_KEY=tvly-你的key</pre>\n\n"
+            msg += "🔹 配置 Tavily API Key：\n在環境變數中設定 TAVILY_API_KEY (註冊於 https://app.tavily.com)\n例如在 ~/.mok/.anget 中新增：\n<pre>TAVILY_API_KEY=tvly-你的key</pre>\n\n"
         elif "duckduckgo-search" in item:
             msg += "🔹 安裝 DuckDuckGo 搜尋庫：\n<pre>/admin pip install duckduckgo-search</pre>\n\n"
     msg += "完成後請 /reload 重新載入工具。"
@@ -455,6 +455,12 @@ async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: 
     搜尋專用的自然化函式，支援流式顯示思考過程。
     返回包含概述和連結列表的最終回覆字串。
     """
+    # 先嚐試解析 JSON
+    try:
+        data = json.loads(raw_result)
+    except json.JSONDecodeError:
+        # 不是 JSON，可能已經是幫助文本、錯誤提示等，直接返回
+        return raw_result
     # 解析 JSON，提取標題和所有連結
     titles = []
     all_links = []
@@ -615,74 +621,57 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
     以及 dict 引數（JSON 工具呼叫）
     """
 
-    dep_error = check_search_deps()
-    if dep_error:
-        return dep_error
+    # ========== 新增：參數規範化與有效性檢查 ==========
+    query = None
+    timelimit = None
 
-    if not args:
-
-        help_text = f'''
-    {PLUGIN_INFO["icon"]} 搜尋使用說明：
-
-        搜尋網頁（由 DuckDuckGo 、 TAVILY(需API)提供）
-        返回標題、摘要與連結。可指定時間範圍
-        <pre>搜尋 [關鍵詞] [時間篩選]</pre>
-        例：
-        <pre>搜尋 香港新聞 w</pre>
-        <pre>/search 香港新聞 w</pre>
-        時間篩選:
-        "d": "天", "w": "週", "m": "月", "y": "年"
-
-        =====
-        🧩 自然語言意圖辨識：
-    '''
-                # 動態新增 intent_keywords（不轉義）
-        for keyword, cmd in PLUGIN_INFO["intent_keywords"]:
-            help_text += f'   "{keyword}" → {cmd}\n'
-        return help_text
-
-
-    params = {}
-
-    # 引數解析
     if isinstance(args, dict):
-        params = args
-    else:
-        parts = args.strip().split()
-        
-
-
-
-
-
+        # 如果是字典，提取 query 和 timelimit
+        query = args.get("query", "").strip()
+        timelimit = args.get("timelimit")
+    elif isinstance(args, str):
+        # 如果是字符串，解析
+        args = args.strip()
+        if not args:
+            # 空字符串 → 返回幫助
+            return _get_search_help_text()
+        parts = args.split()
         time_map = {"d": "d", "w": "w", "m": "m", "y": "y"}
-        timelimit = None
         query_parts = []
         for p in parts:
             if p in time_map:
                 timelimit = time_map[p]
             else:
                 query_parts.append(p)
-        query = " ".join(query_parts)
-        if not query:
-            return json.dumps({"success": False, "error": "請提供搜尋關鍵詞"}, ensure_ascii=False)
-        params = {"query": query, "timelimit": timelimit}
+        query = " ".join(query_parts).strip()
+    else:
+        # 未知類型，返回幫助
+        return _get_search_help_text()
 
+    # 檢查是否有有效的查詢詞
+    if not query:
+        return _get_search_help_text()
 
+    # ========== 依賴檢查 ==========
+    dep_error = check_search_deps()
+    if dep_error:
+        return dep_error
 
-    # 複製 params，因為兩個後端可能接受不同引數
-    # DuckDuckGo 需要 timelimit，Tavily 不需要
+    # 構造參數
+    params = {"query": query}
+    if timelimit:
+        params["timelimit"] = timelimit
+
+    # 其餘邏輯保持不變（合併 Tavily 和 DuckDuckGo）
     ddg_params = params.copy()
-    tavily_params = {"query": params["query"]}   # Tavily 只使用 query，忽略 timelimit
+    tavily_params = {"query": params["query"]}
 
-    # 併發呼叫兩個搜尋
     results_tavily, results_ddg = await asyncio.gather(
         _do_search_via_tavily(tavily_params),
         _do_search_duckduckgo_async(ddg_params),
-        return_exceptions=True   # 防止一個失敗導致另一個被取消
+        return_exceptions=True
     )
 
-    # 合併結果
     all_items = []
     errors = []
 
@@ -702,7 +691,7 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
     elif isinstance(results_ddg, dict) and not results_ddg.get("success"):
         errors.append(f"DuckDuckGo: {results_ddg.get('error', '未知錯誤')}")
 
-    # 去重（簡單按連結去重，可選）
+    # 去重
     seen_urls = set()
     unique_items = []
     for item in all_items:
@@ -717,7 +706,7 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
             "query": params["query"],
             "total": len(unique_items),
             "results": unique_items,
-            "errors": errors if errors else None   # 附帶錯誤資訊，便於除錯，但不會影響自然化
+            "errors": errors if errors else None
         }, ensure_ascii=False)
     else:
         return json.dumps({
@@ -725,3 +714,31 @@ async def handle_web_search(args: Union[str, dict], chat_id: str = None) -> str:
             "error": "所有搜尋源均未返回結果",
             "details": errors
         }, ensure_ascii=False)
+
+
+def _get_search_help_text() -> str:
+    """返回搜索幫助文本"""
+    help_text = f'''
+    {PLUGIN_INFO["icon"]} 搜尋使用說明：
+
+        搜尋網頁（由 DuckDuckGo 、 TAVILY(需API)提供）
+        返回標題、摘要與連結。可指定時間範圍
+        <pre>搜尋 [關鍵詞] [時間篩選]</pre>
+        例：
+        <pre>搜尋 香港新聞 w</pre>
+        <pre>/search 香港新聞 w</pre>
+        時間篩選:
+        "d": "天", "w": "週", "m": "月", "y": "年"
+
+        =====
+        🧩 自然語言意圖辨識：
+    '''
+    for keyword, cmd in PLUGIN_INFO["intent_keywords"]:
+        help_text += f'   "{keyword}" → {cmd}\n'
+    return help_text
+
+
+
+
+
+

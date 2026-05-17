@@ -30,7 +30,7 @@ PLUGIN_INFO = {
 
         ("/回憶", "/memory list"),
     ],
-    "updata":"202605170422",
+    "updata":"202605171733",
     "tool_schema": {
     "name": "memory",
     "description": "管理長期記憶和知識庫。支持記住信息、回憶信息、列出記憶、刪除記憶、清空記憶、重建知識庫、列出知識庫。",
@@ -66,7 +66,14 @@ PLUGIN_INFO = {
 import logging, os, re, chromadb, hashlib
 from chromadb.config import Settings
 
-# from chromadb.utils import embedding_functions
+# 全局变量初始化
+_EMBED_AVAILABLE = None
+_embed_fn = None
+_kb_collection = None
+_client = None
+_collection = None
+MISSING_DEPS = False
+
 
 # agent 名稱
 mokagi_name = os.environ.get("AD_AgiName")
@@ -150,7 +157,6 @@ KNOWLEDGE_DIR = os.path.expanduser(f"~/.{mokagi_name}/{MOK_AGENT_NAME}")
 # 用途: 嘗試載入 sentence-transformers 庫，判斷是否支援向量嵌入。
 #       若未安裝，則 EMBED_AVAILABLE = False，知識庫功能將不可用。
 # ------------------------------------------------------------------------------------ #
-MISSING_DEPS = False
 def _init_embedding():
     global _EMBED_AVAILABLE, _embed_fn, _kb_collection, MISSING_DEPS
     if _EMBED_AVAILABLE is not None:
@@ -195,11 +201,23 @@ def get_kb_collection():
 #   chromadb.Collection: 使用者記憶 collection。
 # ------------------------------------------------------------------------------------ #
 def _col():
-    global _collection, _client
+    """取得使用者記憶的 ChromaDB collection 物件，若尚未初始化則自動建立。"""
+    global _collection, _client, MISSING_DEPS
+    if MISSING_DEPS:
+        # 缺少必要依赖（如 chromadb），返回 None，调用方应检查
+        return None
     if _collection is None:
-        if _client is None:
-            _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
-        _collection = _client.get_or_create_collection(name=f"{safe_MOK_AGENT_NAME}_user_memory")
+        try:
+            if _client is None:
+                _client = chromadb.PersistentClient(
+                    path=CHROMA_PATH,
+                    settings=Settings(anonymized_telemetry=False)
+                )
+            _collection = _client.get_or_create_collection(name=f"{safe_MOK_AGENT_NAME}_user_memory")
+        except Exception as e:
+            logging.error(f"初始化用户记忆 collection 失败: {e}")
+            MISSING_DEPS = True
+            return None
     return _collection
 
 # ------------------------------------------------------------------------------------ #
@@ -274,14 +292,15 @@ def chunk_markdown_by_headings(content: str, max_chars=500) -> list:
 #   str: 操作結果訊息（成功或錯誤）。
 # ------------------------------------------------------------------------------------ #
 def rebuild_knowledge_base():
-    """掃描 room，將 .md 文件切塊後存入 _kb_collection"""
-    if not EMBED_AVAILABLE or _kb_collection is None:
+    """掃描 room，將 .md 文件切塊後存入知識庫 ChromaDB collection。"""
+    # 使用 get_kb_collection 获取知识库对象，它会自动检查依赖
+    kb = get_kb_collection()
+    if kb is None:
         return "❌ 知識庫功能未啟用，請安裝 sentence-transformers 並重啟。"
-
     if not os.path.exists(KNOWLEDGE_DIR):
         return f"❌ 知識庫目錄不存在，請建立 {KNOWLEDGE_DIR} 並放入 .md 檔案。"
     try:
-        _kb_collection.delete(where={"source": "kb"})
+        kb.delete(where={"source": "kb"})
     except:
         pass
     count = 0
@@ -296,7 +315,7 @@ def rebuild_knowledge_base():
             doc_text = chunk["content"]
             heading = chunk["heading"]
             doc_id = hashlib.md5(f"{filename}_{idx}_{heading}_{doc_text[:50]}".encode()).hexdigest()
-            _kb_collection.add(
+            kb.add(
                 documents=[doc_text],
                 metadatas=[{"source": "kb", "file": filename, "heading": heading, "chunk_id": idx}],
                 ids=[doc_id]
@@ -388,33 +407,36 @@ async def recall_memory(chat_id: int, query: str, n_results: int = 1, include_kb
     if MISSING_DEPS:
         return ""
     parts = []
-    # 1. 使用者記憶（原有）
+    # 1. 使用者記憶
     try:
         col = _col()
-        results = col.query(
-            query_texts=[query],
-            n_results=n_results,
-            where={"chat_id": str(chat_id)}
-        )
-        docs = results.get("documents", [[]])[0]
-        if docs:
-            parts.append("【用戶記憶】\n" + "\n".join(docs))
+        if col is not None:
+            results = col.query(
+                query_texts=[query],
+                n_results=n_results,
+                where={"chat_id": str(chat_id)}
+            )
+            docs = results.get("documents", [[]])[0]
+            if docs:
+                parts.append("【用戶記憶】\n" + "\n".join(docs))
     except Exception as e:
         logging.error(f"使用者記憶檢索錯誤: {e}")
 
-    # 2. 知識庫檢索（新增）
-    if include_kb and EMBED_AVAILABLE and _kb_collection:
-        try:
-            kb_results = _kb_collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                where={"source": "kb"}
-            )
-            kb_docs = kb_results.get("documents", [[]])[0]
-            if kb_docs:
-                parts.append("【知識庫】\n" + "\n\n---\n\n".join(kb_docs))
-        except Exception as e:
-            logging.error(f"知識庫檢索錯誤: {e}")
+    # 2. 知識庫檢索
+    if include_kb:
+        kb = get_kb_collection()
+        if kb is not None:
+            try:
+                kb_results = kb.query(
+                    query_texts=[query],
+                    n_results=n_results,
+                    where={"source": "kb"}
+                )
+                kb_docs = kb_results.get("documents", [[]])[0]
+                if kb_docs:
+                    parts.append("【知識庫】\n" + "\n\n---\n\n".join(kb_docs))
+            except Exception as e:
+                logging.error(f"知識庫檢索錯誤: {e}")
 
     return "\n\n".join(parts) if parts else ""
 
@@ -563,6 +585,8 @@ async def handle_memory(args: str, chat_id: str = None):
 
     try:
         col = _col()
+        if col is None:
+            return "❌ 記憶功能未初始化，請檢查 chromadb 是否正常安裝。"
 
 
         # -------------------------------------------------------------------------------- #
@@ -696,11 +720,11 @@ async def handle_memory(args: str, chat_id: str = None):
         # 用途: 列出知識庫中已儲存的所有區塊（標題及來源檔案）。
         # -------------------------------------------------------------------------------- #
         elif subcmd == "list_kb":
-            if not EMBED_AVAILABLE or _kb_collection is None:
+            kb = get_kb_collection()
+            if kb is None:
                 return "❌ 知識庫功能未啟用或尚未重建。"
             try:
-                # 取得所有知識庫文件（限制最多 50 條，避免輸出過長）
-                results = _kb_collection.get(limit=50)
+                results = kb.get(limit=50)
                 docs = results.get("documents", [])
                 metadatas = results.get("metadatas", [])
                 if not docs:
@@ -710,7 +734,6 @@ async def handle_memory(args: str, chat_id: str = None):
                 for i, (doc, meta) in enumerate(zip(docs, metadatas)):
                     heading = meta.get("heading", "無標題")
                     source_file = meta.get("file", "未知檔案")
-                    # 顯示標題、來源檔案以及內容前 60 個字元
                     preview = doc[:60].replace('\n', ' ')
                     reply += f"\n[{i+1}] {heading} (from {source_file})\n    {preview}...\n"
                 return reply

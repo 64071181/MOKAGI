@@ -2,7 +2,7 @@
 mok_web.py
 網頁前端適配器（基於 mokagi）
 提供文件瀏覽器、系統監控、聊天界面，所有 AI 對話能力調用 mokagi 模塊。
-202605170422
+202605171733
 """
 
 import os, sys
@@ -22,6 +22,7 @@ from contextlib import closing
 # 導入核心模塊
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+os.environ['AD_MOK_AGENT_NAME'] = 'default'
 import mokagi
 from mokagi import process_message, clear_history, reload_tools, MOKAGI_home
 
@@ -64,7 +65,7 @@ class FileChangeHandler(FileSystemEventHandler):
             return
         rel_path = os.path.relpath(event.src_path, WATCH_PATH)
         if rel_path.startswith(self.ALLOWED_PREFIXES) and not rel_path.endswith('.tmp'):
-            print(f"File modified: {rel_path}")
+            #print(f"File modified: {rel_path}")
             self.socketio.emit('file_change', {'path': rel_path})
 
 def get_file_tree(path):
@@ -213,6 +214,8 @@ def reload_config(env_path):
     mokagi.MOK_MODEL_NAME = get_current_model_config()['name']
     mokagi.OLLAMA_API = get_current_model_config()['url']
     mokagi.OLLAMA_OPTIONS.update(OLLAMA_OPTIONS)
+    agent_name = os.path.basename(env_path).lstrip('.')
+    os.environ['AD_MOK_AGENT_NAME'] = agent_name
     print(f"同步 mokagi 配置: model={mokagi.MOK_MODEL_NAME}, api={mokagi.OLLAMA_API}")
 
 # ---------- SocketIO 聊天（核心）----------

@@ -46,7 +46,7 @@ PLUGIN_INFO = {
             "required": ["text"]
         }
     },
-    "update": "202605170422"
+    "update": "202605171733"
 }
 
 

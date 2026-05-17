@@ -44,7 +44,7 @@ PLUGIN_INFO = {
             "required": ["action"]
         }
     },
-    "updata":"202605170422"
+    "updata":"202605171733"
 }
 
 
@@ -192,11 +192,10 @@ async def auto_decompose_goal(goal: str) -> list:
                             first_val = next(iter(step["args"].values()))
                             step["args"] = str(first_val)
                     return steps
-
             except:
                 pass
-    # 失敗時返回一個默認的 admin exec 步驟（嘗試讀取文件）
-    return [{"name": "admin", "args": f"exec echo '無法分解任務，請手動處理'"}]
+    # 失败时返回 None，而不是默认步骤
+    return None
 
 
 

@@ -694,6 +694,18 @@
                 mokConfig = configData;
                 agentStartMsg = mokConfig.MOK_start_msg || '低語：您好～';
                 await loadModels();
+
+                // 新增：从 localStorage 读取该 Agent 保存的模型索引
+                const savedModelIndex = localStorage.getItem(`agent_model_${agentName}`);
+                if (savedModelIndex !== null && modelsList[parseInt(savedModelIndex)]) {
+                    await switchModel(parseInt(savedModelIndex), false); // 静默切换，不弹窗
+                } else {
+                    // 如果没有保存，确保使用当前模型索引（可能是0）
+                    if (currentModelIndex !== 0) {
+                        await switchModel(0, false);
+                    }
+                }
+
                 loadChatHistory();
                 if (currentTool === 'settings') renderSettingsContent();
             }
@@ -720,8 +732,10 @@
             const data = await res.json();
             if (data.status === 'ok') {
                 currentModelIndex = index;
+                // 保存到 localStorage，键名包含当前 Agent
+                localStorage.setItem(`agent_model_${currentAgent}`, index);
                 if (currentTool === 'settings') renderSettingsContent();
-                alert(`已切換到模型: ${data.model.name}`);
+                if (!silent) alert(`已切換到模型: ${data.model.name}`);
             }
         } catch (err) { console.error(err); }
     }
@@ -1200,41 +1214,52 @@ async function clearAllChats() {
 
     // Socket 事件
     socket.on('chat_stream', (data) => {
-        if (data.type === 'think') {
-            if (currentThinkDiv) {
-                currentThinkDiv.innerText += data.content;
-                accumulatedThink += data.content;
-                scrollToBottom();
-            }
-        } else if (data.type === 'reply') {
-            if (currentReplyDiv) {
-                currentReplyDiv.innerText += data.content;
-                accumulatedReply += data.content;
-                scrollToBottom();
-            }
-            // 一旦收到回覆，修改思考區域的標題
-            const assistantMsg = currentReplyDiv?.closest('.message.assistant');
-            if (assistantMsg) {
-                const thinkHeader = assistantMsg.querySelector('.think-container > div:first-child');
-                if (thinkHeader && thinkHeader.innerText.includes('思考中')) {
-                    thinkHeader.innerText = `📝 ${currentAgent}回答：`;
-                }
-            }
-        } else if (data.type === 'done') {
-            if (currentReplyDiv && accumulatedReply) {
-                // 先移除臨時佔位消息
-                if (currentAssistantDiv) currentAssistantDiv.remove();
-                // 再保存最終消息（會自動添加到聊天區域）
-                addAssistantMessageAndSave(accumulatedThink, accumulatedReply);
-            }
-            // 重置所有臨時變量
-            currentThinkDiv = null;
-            currentReplyDiv = null;
-            currentAssistantDiv = null;
-            accumulatedReply = '';
-            accumulatedThink = '';
+    if (data.type === 'think') {
+        // 如果没有占位符，自动创建一个
+        if (!currentThinkDiv) {
+            const assistantDiv = document.createElement('div');
+            assistantDiv.className = 'message assistant';
+            assistantDiv.innerHTML = `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}</div><div class="think-content"></div></div>
+                                    <div class="message-bubble" style="background:#3a3a3d;"></div>
+                                    <div class="message-meta">${currentAgent} · 回應中</div>`;
+            chatMessagesDiv.appendChild(assistantDiv);
+            scrollToBottom();
+            currentAssistantDiv = assistantDiv;
+            currentThinkDiv = assistantDiv.querySelector('.think-content');
+            currentReplyDiv = assistantDiv.querySelector('.message-bubble');
         }
-    });
+        if (currentThinkDiv) {
+            currentThinkDiv.innerText += data.content;
+            accumulatedThink += data.content;
+            scrollToBottom();
+        }
+    } else if (data.type === 'reply') {
+        // 保持原有逻辑不变
+        if (currentReplyDiv) {
+            currentReplyDiv.innerText += data.content;
+            accumulatedReply += data.content;
+            scrollToBottom();
+        }
+        const assistantMsg = currentReplyDiv?.closest('.message.assistant');
+        if (assistantMsg) {
+            const thinkHeader = assistantMsg.querySelector('.think-container > div:first-child');
+            if (thinkHeader && thinkHeader.innerText.includes('思考中')) {
+                thinkHeader.innerText = `📝 ${currentAgent}回答：`;
+            }
+        }
+    } else if (data.type === 'done') {
+        // 保持原有逻辑不变
+        if (currentReplyDiv && accumulatedReply) {
+            if (currentAssistantDiv) currentAssistantDiv.remove();
+            addAssistantMessageAndSave(accumulatedThink, accumulatedReply);
+        }
+        currentThinkDiv = null;
+        currentReplyDiv = null;
+        currentAssistantDiv = null;
+        accumulatedReply = '';
+        accumulatedThink = '';
+    }
+});
 
 
     socket.on('stream_stopped', () => console.log('已停止生成'));
