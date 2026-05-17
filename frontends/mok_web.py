@@ -116,6 +116,7 @@ CURRENT_ENV_PATH = DOT_MING_PATH
 
 def parse_dot_ming():
     """解析 .default 文件，返回配置字典和模型列表（與 mokagi 配置同步）"""
+    global MOK_CONFIG
     config = {}
     models = []
     if not os.path.exists(DOT_MING_PATH):
@@ -130,6 +131,7 @@ def parse_dot_ming():
             "presence_penalty": 0.6,
             "frequency_penalty": 0.5
         }
+        MOK_CONFIG = {}
         return config, models
     with open(DOT_MING_PATH, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -177,7 +179,6 @@ def parse_dot_ming():
     }
     if "MOK_num_threads" in config:
         ollama_options["num_threads"] = int(config["MOK_num_threads"])
-    global MOK_CONFIG
     MOK_CONFIG = {k: v for k, v in config.items() if k.startswith('MOK_')}
     return ollama_options, models
 
