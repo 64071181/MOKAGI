@@ -148,11 +148,10 @@ def _ensure_dir(chat_id: str) -> str:
 #   list: 步驟列表，如 [{"name": "admin", "args": "read_file intent.py 20"}]
 # ------------------------------------------------------------------------------------ #
 async def auto_decompose_goal(goal: str) -> list:
-    import __main__
+    import mokagi
     # 從主程序獲取工具定義
     tool_defs = []
-    if hasattr(__main__, 'build_tool_definitions'):
-        tool_defs = __main__.build_tool_definitions()
+    tool_defs = mokagi.build_tool_definitions()
 
     ollama_api = load_agent_config_value("MOK_MODEL_api") or "http://localhost:11434/api/generate"
     model_name = load_agent_config_value("MOK_MODEL_NAME") or "qwen3:1.7b"
@@ -169,9 +168,8 @@ async def auto_decompose_goal(goal: str) -> list:
 ]
 
 只輸出 JSON 數組，不要有其他文字。"""
-    print(f"👼tools_desc=:\n{tool_defs}\n---------")
-    print(f"👼auto_decompose_goal:\n{prompt}\n---------")
-    
+    print(f"---------\n👼[auto_decompose_goal]:\n{prompt}\n---------")
+
     async with httpx.AsyncClient(timeout=180) as client:
         resp = await client.post(ollama_api, json={
             "model": model_name,

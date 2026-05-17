@@ -65,7 +65,8 @@ PLUGIN_INFO = {
 
 import logging, os, re, chromadb, hashlib
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
+
+# from chromadb.utils import embedding_functions
 
 # agent 名稱
 mokagi_name = os.environ.get("AD_AgiName")
@@ -149,37 +150,41 @@ KNOWLEDGE_DIR = os.path.expanduser(f"~/.{mokagi_name}/{MOK_AGENT_NAME}")
 # 用途: 嘗試載入 sentence-transformers 庫，判斷是否支援向量嵌入。
 #       若未安裝，則 EMBED_AVAILABLE = False，知識庫功能將不可用。
 # ------------------------------------------------------------------------------------ #
-try:
-    from sentence_transformers import SentenceTransformer
-    from chromadb.utils import embedding_functions
-    EMBED_AVAILABLE = True
-except ImportError:
-    EMBED_AVAILABLE = False
-    logging.warning("sentence-transformers 未安裝，知識庫功能將不可用")
+MISSING_DEPS = False
+def _init_embedding():
+    global _EMBED_AVAILABLE, _embed_fn, _kb_collection, MISSING_DEPS
+    if _EMBED_AVAILABLE is not None:
+        return _EMBED_AVAILABLE
+    try:
+        from chromadb.utils import embedding_functions
+        # 这里不会立即加载模型，只是获取函数类
+        _embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        # 尝试创建一次 collection 以触发模型下载/加载（但仅在需要时）
+        _EMBED_AVAILABLE = True
+        logging.info("sentence-transformers 可用，知识库功能已启用")
+    except ImportError:
+        _EMBED_AVAILABLE = False
+        MISSING_DEPS = True
+        logging.warning("sentence-transformers 未安装，知识库功能将不可用")
+    return _EMBED_AVAILABLE
 
-# 使用 ChromaDB 官方的 SentenceTransformer 嵌入函數（自動處理模型下載與調用）
-if EMBED_AVAILABLE:
-    embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-else:
-    embed_fn = None
-
-# ---------- ChromaDB 初始化（保留原有 collection）----------
-try:
-    _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
-    _collection = _client.get_or_create_collection(name=f"{safe_MOK_AGENT_NAME}_user_memory")   # 使用者記憶
-    # 新增：知識庫 collection（獨立，使用 embedding）
-    if EMBED_AVAILABLE:
-        _kb_collection = _client.get_or_create_collection(
-            name=f"{safe_MOK_AGENT_NAME}_room",
-            embedding_function=embed_fn
-        )
-    else:
-        _kb_collection = None
-    MISSING_DEPS = False
-except ImportError:
-    MISSING_DEPS = True
-    _collection = None
-    _kb_collection = None
+def get_kb_collection():
+    """延迟初始化知识库 collection，仅当需要时创建"""
+    global _kb_collection, _client
+    if _kb_collection is None:
+        if not _init_embedding():
+            return None
+        if _client is None:
+            _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
+        try:
+            _kb_collection = _client.get_or_create_collection(
+                name=f"{safe_MOK_AGENT_NAME}_room",
+                embedding_function=_embed_fn
+            )
+        except Exception as e:
+            logging.error(f"创建知识库 collection 失败: {e}")
+            return None
+    return _kb_collection
 
 # ------------------------------------------------------------------------------------ #
 # 函數: _col
@@ -192,13 +197,10 @@ except ImportError:
 def _col():
     global _collection, _client
     if _collection is None:
-        _client = chromadb.PersistentClient(
-            path=CHROMA_PATH,
-            settings=Settings(anonymized_telemetry=False)
-        )
+        if _client is None:
+            _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
         _collection = _client.get_or_create_collection(name=f"{safe_MOK_AGENT_NAME}_user_memory")
     return _collection
-
 
 # ------------------------------------------------------------------------------------ #
 # 函數: chunk_markdown_by_headings
