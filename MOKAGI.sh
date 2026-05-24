@@ -1,13 +1,5 @@
-
-
-
-
-
-
-
 #!/usr/bin/env bash
 # "start":"202604231241"
-# "updata":"202605171733"
 # ==============================================
 # ================== 基礎設定 ===================
 # ==============================================
@@ -18,24 +10,30 @@
 
 
 
+
 set -o pipefail                       # 讓管道中任何一個命令失敗都會導致整個指令碼失敗
+update_date="202605250320"              # 版本 | 更新日期（年月日時分）
 MOKAGIName="mok"                      # 與 mokagi.py 中的 MOKAGI_home 一致
 PROJECT_DIR="${HOME}/.${MOKAGIName}"  # ~/.mok
 BOT_SCRIPT="${PROJECT_DIR}/mokagi.py" # 核心引擎（非直接啟動，僅供參考）
 
 MOK_AGENT_NAME="default"
 #  核心引擎 Github根路徑
+GITHUB_REPO="https://github.com/64071181/MOKAGI"
 GITHUB_REPO_RAW="https://raw.githubusercontent.com/64071181/MOKAGI/refs/heads/main"
 # 工具庫
-GITHUB_TOOLS_REPO="https://github.com/64071181/MOKAGI/tree/main/tools"
+GITHUB_TOOLS_REPO="${GITHUB_REPO}/tree/main/tools"
 
 
 # 核心文件路徑
-CORE_FILES=("mokagi.py" "tool_handler.py")
-# 前端文件路徑（位於 frontends/ 子目錄）
+CORE_FILES=("mokagi.py" "tool_handler.py" "recovery.py" "launcher.py")
+
+# 前端文件路徑
 FRONTEND_FILES=("frontends/mok_tg.py" "frontends/mok_web.py")
-# 工具文件（位於 tools/ 子目錄）
-TOOL_FILES=("memory.py" "intent.py" "admin.py" "workflow.py")
+
+# 工具文件
+TOOL_FILES=("memory.py" "intent.py" "admin.py" "workflow.py" "web_search.py" "web_fetch.py" "autofix.py")
+
 # 網頁模板（位於 html/ 子目錄）
 HTML_FILES=("index.html" "monitor.html" "ASCII.html")  # 根據實際需要
 
@@ -47,6 +45,10 @@ NC='\033[0m'
 
 
 
+
+echo -e "${GREEN}=========================================="
+echo -e " 👼 [0/11] 開始安裝 mok_agi_${update_date}  👼"
+echo -e "==========================================${NC}"
 
 
 
@@ -67,7 +69,7 @@ NC='\033[0m'
 
 
 echo -e "${GREEN}=========================================="
-echo -e " [1/10] 環境設定 "
+echo -e " [1/11] 環境設定 "
 echo -e "==========================================${NC}"
 
 mkdir -p "${PROJECT_DIR}"
@@ -102,10 +104,8 @@ export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH}"
 
 
 
-
-# ================== 配置檔案處理 ==================
 echo -e "${GREEN}=========================================="
-echo -e " [2/10] 環境配置檔案 "
+echo -e " [2/11] 環境配置檔案 "
 echo -e "==========================================${NC}"
 
 shopt -s dotglob
@@ -117,7 +117,7 @@ for cfg in "${configs[@]}"; do
 done
 
 if [ ${#valid_configs[@]} -eq 0 ]; then
-    echo -e "${YELLOW}請輸入此 Agent 的名稱（例如：溟、沐、sam）:${NC}"
+    echo -e "${YELLOW}請輸入此 Agent 的名稱（例如：joe、yun、sam）:${NC}"
     read -p "Agent 名稱: " MOK_AGENT_NAME_INPUT
     MOK_AGENT_NAME_INPUT=$(echo "$MOK_AGENT_NAME_INPUT" | xargs | cut -c1-32)
     if [ -z "$MOK_AGENT_NAME_INPUT" ]; then
@@ -137,7 +137,7 @@ else
     for i in "${!valid_configs[@]}"; do
         echo "  $((i+1))) $(basename "${valid_configs[$i]}")"
     done
-    read -p "請選擇要使用的設定檔編號: " cfg_choice
+    read -p "請選擇要使用的主設定檔編號: " cfg_choice
     if [[ "$cfg_choice" =~ ^[0-9]+$ ]] && [ "$cfg_choice" -ge 1 ] && [ "$cfg_choice" -le ${#valid_configs[@]} ]; then
         ENV_FILE="${valid_configs[$((cfg_choice-1))]}"
         MOK_AGENT_NAME=$(get_agent_name "$ENV_FILE")
@@ -171,9 +171,8 @@ fi
 
 
 
-# ================== Ollama 安裝 ==================
 echo -e "${GREEN}=========================================="
-echo -e " 🦙 [3/10] 安裝 ollama "
+echo -e " 🦙 [3/11] 安裝 ollama "
 echo -e "==========================================${NC}"
 
 if [ -z "${MOK_MODEL_NAME}" ]; then
@@ -216,10 +215,8 @@ sleep 5
 
 
 
-
-# ================== 下載模型 ==================
 echo -e "${GREEN}=========================================="
-echo -e " [4/10] 下載模型 ${MOK_MODEL_NAME} "
+echo -e " [4/11] 下載模型 ${MOK_MODEL_NAME} "
 echo -e "==========================================${NC}"
 export OLLAMA_HOST="[::]:11434"
 if ollama list | grep -q "^${MOK_MODEL_NAME} "; then
@@ -262,13 +259,14 @@ rm Modelfile
 
 
 
-# ================== 安裝 Python 依賴 ==================
+
+
 echo -e "${GREEN}=========================================="
-echo -e " [5/10] 安裝依賴... "
+echo -e " [5/11] 安裝 Python 依賴... "
 echo -e "==========================================${NC}"
 sudo apt-get update -qq 2>/dev/null
 sudo apt-get install -y -qq python3 python3-pip 2>/dev/null || true
-pip install python-telegram-bot httpx flask flask-socketio watchdog --quiet
+pip install python-telegram-bot httpx flask flask-socketio watchdog openai --quiet
 
 
 
@@ -281,9 +279,11 @@ pip install python-telegram-bot httpx flask flask-socketio watchdog --quiet
 
 
 
-# ================== 下載核心模塊 ==================
+
+
+
 echo -e "${GREEN}=========================================="
-echo -e " [6/10] 安裝核心 AI 引擎 ... "
+echo -e " [6/11] 安裝核心 AI 引擎 ... "
 echo -e "==========================================${NC}"
 for file in "${CORE_FILES[@]}"; do
     curl -sL "${GITHUB_REPO_RAW}/${file}" -o "${PROJECT_DIR}/${file}"
@@ -302,9 +302,10 @@ done
 
 
 
-# ================== 下載工具插件 ==================
+
+
 echo -e "${GREEN}=========================================="
-echo -e " [7/10] 安裝基本工具... "
+echo -e " [7/11] 安裝基本工具... "
 echo -e "==========================================${NC}"
 for tool in "${TOOL_FILES[@]}"; do
     curl -sL "${GITHUB_REPO_RAW}/tools/${tool}" -o "${PROJECT_DIR}/tools/${tool}"
@@ -322,28 +323,18 @@ done
 
 
 
-# ================== 下載前端適配器 ==================
+
+
+
 echo -e "${GREEN}=========================================="
-echo -e " [8/10] 安裝前端介面... "
+echo -e " [8/11] 安裝前端介面... "
 echo -e "==========================================${NC}"
 for front in "${FRONTEND_FILES[@]}"; do
     # 例如 frontends/mok_web.py
     curl -sL "${GITHUB_REPO_RAW}/${front}" -o "${PROJECT_DIR}/${front}"
 done
 
-
-
-
-
-
-
-
-
-
-# ================== 下載網頁模板 ==================
-echo -e "${GREEN}=========================================="
-echo -e " 下載網頁模板... "
-echo -e "==========================================${NC}"
+# 下載網頁模板
 for html in "${HTML_FILES[@]}"; do
     curl -sL "${GITHUB_REPO_RAW}/html/${html}" -o "${PROJECT_DIR}/html/${html}"
 done
@@ -365,9 +356,61 @@ mkdir -p "${PROJECT_DIR}/skill"
 
 
 
+
+
+
+
+
+
+
+# ==============================================
+# ==============================================
+# ====== 生成反向隧道專用密鑰（GPU → CPU） =======
+# ==============================================
+# ==============================================
+
+echo -e "${GREEN}=========================================="
+echo -e " [9/11] 生成反向隧道專用密鑰（GPU → CPU） ... "
+echo -e "==========================================${NC}"
+
+Have_G_C_Key=false
+REVERSE_KEY_DIR="/home/ubuntu/.ssh"
+REVERSE_PRIVATE_KEY="$REVERSE_KEY_DIR/id_rsa_reverse"
+REVERSE_PUBLIC_KEY="$REVERSE_PRIVATE_KEY.pub"
+
+if [ ! -f "$REVERSE_PRIVATE_KEY" ]; then
+    sudo -u ubuntu ssh-keygen -t rsa -b 4096 -N "" -f "$REVERSE_PRIVATE_KEY"
+    echo "💖 反向隧道密鑰已生成：$REVERSE_PRIVATE_KEY"
+else
+    echo "💖 反向隧道密鑰已存在"
+    Have_G_C_Key=true
+fi
+# 確保公鑰已添加到 authorized_keys（允許 GPU 機連接）
+if ! grep -q "$(cat "$REVERSE_PUBLIC_KEY")" /home/ubuntu/.ssh/authorized_keys 2>/dev/null; then
+    echo "📌 將公鑰添加到 authorized_keys..."
+    cat "$REVERSE_PUBLIC_KEY" >> /home/ubuntu/.ssh/authorized_keys
+    chmod 600 /home/ubuntu/.ssh/authorized_keys
+    echo "💖 公鑰已添加"
+else
+    echo "💖 公鑰已存在於 authorized_keys"
+fi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ================== PM2 啟動 ==================
 echo -e "${GREEN}=========================================="
-echo -e "  [9/10] PM2 啟動... ${NC}"
+echo -e "  [10/11] PM2 啟動 (統一進程 mok_agi) ${NC}"
 echo -e "==========================================${NC}"
 if ! command -v pm2 &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_18.x | sudo bash -
@@ -375,25 +418,23 @@ if ! command -v pm2 &> /dev/null; then
     sudo npm install -g pm2
 fi
 
-# 啟動 Telegram 機器人 (使用 frontends/mok_tg.py)
-export MOK_AGENT_NAME="${MOK_AGENT_NAME}"
-export MOKAGI_HOME="${MOKAGIName}"
-pm2 delete ${MOKAGIName}_${MOK_AGENT_NAME} 2>/dev/null || true
-pm2 start "${PROJECT_DIR}/frontends/mok_tg.py" \
-    --name ${MOKAGIName}_${MOK_AGENT_NAME} \
-    --interpreter python3 \
-    --cwd "${PROJECT_DIR}"
-pm2 save
+# 下載 launcher.py（如果不存在）
+if [ ! -f "${PROJECT_DIR}/launcher.py" ]; then
+    curl -sL "${GITHUB_REPO_RAW}/launcher.py" -o "${PROJECT_DIR}/launcher.py"
+    chmod +x "${PROJECT_DIR}/launcher.py"
+fi
 
-# 啟動網頁介面 (使用 frontends/mok_web.py，指定端口 5000)
-pm2 delete "mok_web" 2>/dev/null || true
-pm2 start "${PROJECT_DIR}/frontends/mok_web.py" \
-    --name "mok_web" \
+# 停止並刪除舊的進程（避免衝突）
+pm2 delete mok_agi 2>/dev/null || true
+
+# 啟動統一啟動器
+pm2 start "${PROJECT_DIR}/launcher.py" \
+    --name "mok_agi" \
     --interpreter python3 \
     --cwd "${PROJECT_DIR}" \
-    -- --port 5000
-pm2 save
+    --log-date-format "YYYY-MM-DD HH:MM:SS"
 
+pm2 save
 
 
 
@@ -408,16 +449,26 @@ pm2 save
 
 # ================== 完成 ==================
 echo -e "${GREEN}=========================================="
-echo -e " 💖 [10/10] ${MOKAGIName}_${MOK_AGENT_NAME} 部署完成！"
+echo -e " 🎉 [11/11] mok_agi_${update_date} 部署完成！ 🎉"
 echo -e "=========================================="
 echo ""
-echo -e " Telegram 機器人日誌: pm2 logs ${MOKAGIName}_${MOK_AGENT_NAME}"
-echo -e " 網頁介面日誌:        pm2 logs mok_web"
-echo -e " mokagi 日誌:        pm2 logs"
+echo -e " GITHUB:"
+echo -e " ${GITHUB_REPO}"
 echo ""
-echo -e " 重啟:               pm2 restart all"
+echo -e " 查看全部日誌: pm2 logs mok_agi"
+echo -e " 重啟所有服務: pm2 restart mok_agi"
+echo -e " 停止所有服務: pm2 stop mok_agi"
 echo ""
-echo -e " 模型列表:            ollama list"
-echo -e " 強制清理 ollama:     sudo pkill -f 'ollama runner'"
+echo -e " 模型列表:     ollama list"
+echo -e " 強制清理:     sudo pkill -f 'ollama runner'"
+echo ""
+echo -e " 🌐 網頁界面訪問方式："
+echo -e "    本機訪問： http://127.0.0.1:5000"
+echo -e "    遠端訪問： http://<您的伺服器IP>:5000"
+echo -e "    （請確保防火牆已開放 5000 埠，或使用 SSH 隧道）"
+echo -e "    首次使用請先選擇左側 Agent，即可開始對話。"
+echo ""
+echo -e " 檢查模型隧道："
+echo -e "              ss -tlnp | grep -E '11434|11435'"
 echo ""
 echo -e "==========================================${NC}"

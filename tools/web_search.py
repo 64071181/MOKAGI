@@ -13,11 +13,14 @@ PLUGIN_INFO = {
     "command": "/search",
     "icon": "🔍",
     "handler": "handle_web_search",
-    "description": "搜尋網頁（由 DuckDuckGo 提供）",
+    "description": "搜索網頁（DuckDuckGo + Tavily），可指定時間範圍(d/w/m/y)，返回標題、摘要和鏈接。",
     "intent_keywords": [
-        ("/搜", "/search")
+        ("搜", "/search"),
+        ("查", "/search"),
+        ("找", "/search"),
+        ("搵", "/search")
     ],
-    "updata": "202605171733",
+    "update": "202605250320",
     "naturalize": True,
     "naturalize_func": "naturalize_search_result",
     "tool_schema": {
@@ -482,9 +485,9 @@ async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: 
 
     # 給 LLM 的 prompt
     title_text = "、".join(titles)
-    prompt = f"""使用者搜尋：「{user_text}」
-搜尋到的部分文章標題：{title_text}
-請用自然口語，用2-3句告訴使用者找到了哪些內容（可以提及1-2個標題的關鍵詞），不要編造細節。加入建議使用者之後的操作，直接回復："""
+    prompt = f"""搜尋查詢：{user_text}
+相關標題：{title_text}
+用2-3句自然語言總結搜尋結果（提及重點標題關鍵詞），不編造細節，最後給出建議。直接回復："""
 
     # 流式請求 Ollama
     payload = {
@@ -534,7 +537,7 @@ async def naturalize_search_result(user_text: str, raw_result: str, ollama_api: 
                             except:
                                 pass
         except Exception as e:
-            logging.warning(f"流式生成失敗: {e}")
+            logging.warning(f"流式 {e}")
             # 回退到非流式
             try:
                 async with httpx.AsyncClient(timeout=30) as client:

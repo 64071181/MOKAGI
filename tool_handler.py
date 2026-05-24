@@ -1,5 +1,8 @@
-# tool_handler.py - 統一工具調用中間層（適配 mokagi 架構）
-# 負責加載 tools/ 下的所有插件，提供意圖識別、命令執行、結果自然化等功能
+"""
+202605250320
+tool_handler.py - 統一工具調用中間層（適配 mokagi 架構）
+負責加載 tools/ 下的所有插件，提供意圖識別、命令執行、結果自然化等功能
+"""
 
 import os
 import sys
@@ -67,12 +70,12 @@ def load_tools() -> Tuple[Dict[str, Any], Dict[str, Any]]:
                     handler = getattr(module, handler_name, None)
                     if handler:
                         _cmd_map[cmd] = handler
-                        logger.info(f"加載工具: {module_name} -> {cmd}")
+                        #logger.info(f"加載工具: {module_name} -> {cmd}")
                     else:
                         logger.warning(f"工具 {module_name} 缺少 handler: {handler_name}")
         except Exception as e:
             logger.error(f"加載工具 {module_name} 失敗: {e}", exc_info=True)
-    
+    print(f"\n========= 已轉換AGENT =========\n")
     logger.info(f"共加載 {len(_tools)} 個工具, 命令: {list(_cmd_map.keys())}")
     return _tools, _cmd_map
 

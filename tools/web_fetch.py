@@ -9,11 +9,15 @@ PLUGIN_INFO = {
     "command": "/fetch",
     "icon": "🌐",
     "handler": "handle_web_fetch",
-    "description": "抓取網頁內容（獲取文本信息）",
+    "description": "抓取指定網址的網頁內容，返回標題和純文本摘要。",
     "intent_keywords": [
-        ("/取", "/fetch")
+        ("這網", "/fetch"),
+        ("這個網頁", "/fetch"),
+        ("這網址", "/fetch"),
+        ("網頁內容", "/fetch"),
+        ("http", "/fetch"),
     ],
-    "updata": "202605171733",
+    "update": "202605250320",
     "naturalize_func": "naturalize_fetch_result",
     "tool_schema": {
         "name": "web_fetch",
@@ -247,16 +251,16 @@ async def naturalize_fetch_result(user_text: str, raw_result: str, ollama_api: s
         return f"❌ 無法讀取網頁：{data.get('error', '未知錯誤')}"
     title = data.get("title", "無標題")
     content = data.get("content", "")
-    # 限制內容長度，避免模型 token 過多
-    preview = content[:800]
-    # 讓 LLM 將內容總結為1-2句話
-    prompt = f"""用戶想要了解網頁內容：
-網址：{data['url']}
-標題：{title}
-正文摘要（前800字）：
-{preview}
 
-請用一句或兩句話告訴用戶這個網頁主要講了什麼。不要提及“根據摘要”，直接說出核心信息。"""
+    # 限制內容長度，避免模型 token 過多
+    preview = content#[:800]
+    # 讓 LLM 將內容總結為1-2句話
+    prompt = f"""網頁內容摘要：
+標題：{title}
+內容：{preview}
+
+用 2000字內 概括網頁核心信息，直接說，不要加「根據摘要」。"""
+
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(ollama_api, json={

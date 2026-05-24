@@ -16,19 +16,33 @@ PLUGIN_INFO = {
     "command": "/workflow",
     "icon": "📋",
     "handler": "handle_workflow",
-    "description": "管理多步驟任務（創建、繼續、查看、完成）",
+    "description": "管理多步驟工作流：創建工作流(create)、查看狀態(status)、恢復執行(resume)、更新步驟(update_step)、關閉工作流(close)**適用於需要多個工具按順序執行的複雜任務**（例如：搜索論文、整理成簡報、保存到工作區）。如果用戶請求涉及多個步驟或需要調用多個工具，應優先使用此工作流工具創建並執行任務。",
     "intent_keywords": [
-        ("/工", "/workflow create"),
-        ("/工單", "/workflow list"),
-        ("/換工", "/workflow switch"),
-        ("/進度", "/workflow status"),
-        ("/再工", "/workflow resume"),
-        ("/完工", "/workflow close")
+        ("新工作", "/workflow create"),
+        ("做一個", "/workflow create"),
+        ("job", "/workflow create"),
+
+        ("現在工作", "/workflow list"),
+        ("現時工作", "/workflow list"),
+        ("工作列表", "/workflow list"),
+        ("工作清單", "/workflow list"),
+        ("現時項目", "/workflow list"),
+
+        ("換工作", "/workflow switch"),
+        ("轉工作", "/workflow switch"),
+        ("其他工作", "/workflow switch"),
+        ("其他項目", "/workflow list"),
+
+        ("工作進度", "/workflow status"),
+        ("項目進度", "/workflow status"),
+
+        ("工作完成", "/workflow close"),
+        ("結束工作流", "/workflow close")
     ],
     #"naturalize_func": "naturalize_workflow_result",
     "tool_schema": {
         "name": "workflow",
-        "description": "管理長期工作流，記錄目標和進度",
+        "description": "管理多步驟工作流，記錄目標、步驟和進度。**適用於需要多個工具按順序執行的複雜任務**（例如：搜索論文、整理成簡報、保存到工作區）。如果用戶請求涉及多個步驟或需要調用多個工具，應優先使用此工作流工具創建並執行任務。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -44,7 +58,7 @@ PLUGIN_INFO = {
             "required": ["action"]
         }
     },
-    "updata":"202605171733"
+    "update":"202605250320"
 }
 
 
@@ -149,54 +163,48 @@ def _ensure_dir(chat_id: str) -> str:
 # ------------------------------------------------------------------------------------ #
 async def auto_decompose_goal(goal: str) -> list:
     import mokagi
-    # 從主程序獲取工具定義
-    tool_defs = []
     tool_defs = mokagi.build_tool_definitions()
 
-    ollama_api = load_agent_config_value("MOK_MODEL_api") or "http://localhost:11434/api/generate"
-    model_name = load_agent_config_value("MOK_MODEL_NAME") or "qwen3:1.7b"
+    prompt = f"""妳是一個任務分解專家。用戶目標：{goal}
 
-    prompt = f"""你是一個任務分解專家。用戶的目標是：「{goal}」
-
-請將目標分解為一系列**可執行的動作**，每個動作用 JSON 對象表示，包含 "name" 和 "args" 字段。
-可用的工具包括：
+將目標分解為按順序執行的步驟，每個步驟對應一個可用工具。工具列表：
 {tool_defs}
 
-輸出格式：一個 JSON 數組，例如：
-[
-  {{"name": "admin", "args": "exec cat ~/.MokAgi/tools/memory.py | head -20"}}
-]
+輸出規則：
+- 必須輸出 JSON 數組，即使只有一個步驟。
+- 每個步驟格式：{{"name": "工具名", "args": "參數"}}
+- 若信息不足，輸出 [{{"name": "ask_user", "args": "具體提問"}}]
 
-只輸出 JSON 數組，不要有其他文字。"""
-    print(f"---------\n👼[auto_decompose_goal]:\n{prompt}\n---------")
+只輸出 JSON 數組，不要其他內容。"""
+    # print(f"---------\n👼[自動分解為一系列可執行的工具呼叫步驟]:\n{prompt}\n---------")
 
-    async with httpx.AsyncClient(timeout=180) as client:
-        resp = await client.post(ollama_api, json={
-            "model": model_name,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 500}
-        })
-        text = resp.json().get("response", "").strip()
+    try:
+        # 調用統一的 call_llm 函數
+        response_text = await mokagi.call_llm(
+            prompt=prompt,
+            stream=False,
+            temperature=0.3,
+            num_predict=500
+        )
+        text = response_text.strip()
         start = text.find('[')
         end = text.rfind(']') + 1
         if start != -1 and end > start:
-            try:
-                steps = json.loads(text[start:end])
-                if isinstance(steps, list):
-
-                    # 規範化參數：確保 admin 的 args 是字符串
-                    for step in steps:
-                        if step.get("name") == "admin" and isinstance(step.get("args"), dict):
-                            # 提取字典中的第一個值作為字符串
-                            first_val = next(iter(step["args"].values()))
-                            step["args"] = str(first_val)
-                    return steps
-            except:
-                pass
-    # 失败时返回 None，而不是默认步骤
+            steps = json.loads(text[start:end])
+            # ---- 新增：如果是單個字典對象，自動包裝為數組 ----
+            if isinstance(steps, dict):
+                steps = [steps]
+                print("檢測到LLM輸出為單個對象，已自動包裝為數組")
+            # -----------------------------------------
+            if isinstance(steps, list):
+                for step in steps:
+                    if step.get("name") == "admin" and isinstance(step.get("args"), dict):
+                        first_val = next(iter(step["args"].values()))
+                        step["args"] = str(first_val)
+                return steps
+    except Exception as e:
+        print(f"自動分解 調用失敗: {e}")
     return None
-
 
 
 
@@ -602,6 +610,112 @@ async def handle_workflow(args, chat_id: str = None) -> str:
 
       else:
           return "未知操作。"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+async def run_workflow(chat_id: str, stream_callback=None) -> str:
+    """自動執行當前未完成的工作流，每步完成後通過回調通知"""
+    import mokagi
+    from mokagi import tool_handler, naturalize_tool_result
+
+    wf = get_current_workflow(chat_id)
+    if not wf:
+        return "❌ 沒有活躍的工作流。"
+
+    steps = wf.get("steps", [])
+    current = wf.get("current_step", 0)
+    if current >= len(steps):
+        return "✅ 工作流已完成所有步驟。"
+
+    # 工具名 -> 命令 映射
+    cmd_map = tool_handler.get_cmd_map()
+    name_to_cmd = {}
+    for mod in tool_handler.get_tools().values():
+        if hasattr(mod, "PLUGIN_INFO"):
+            info = mod.PLUGIN_INFO
+            cmd = info.get("command")
+            schema = info.get("tool_schema")
+            if cmd and schema and "name" in schema:
+                name_to_cmd[schema["name"]] = cmd
+
+    for idx in range(current, len(steps)):
+        step = steps[idx]
+        tool_name = step.get("name")
+        tool_args = step.get("args", "")
+        cmd = name_to_cmd.get(tool_name)
+        handler = cmd_map.get(cmd) if cmd else None
+
+        if not handler:
+            err = f"❌ 步驟 {idx+1} 工具 {tool_name} 不存在"
+            await update_step_result(chat_id, err)
+            if stream_callback:
+                await stream_callback({"type": "reply", "content": err})
+            return err
+
+        # 參數規範化
+        if tool_name == "admin" and isinstance(tool_args, dict):
+            tool_args = str(next(iter(tool_args.values())))
+        elif tool_name == "web_search" and isinstance(tool_args, str):
+            tool_args = {"query": tool_args}
+        elif tool_name == "memory" and isinstance(tool_args, dict):
+            tool_args = str(next(iter(tool_args.values()))) if tool_args else ""
+
+        try:
+            raw_result = await handler(tool_args, chat_id)
+            natural = await naturalize_tool_result(wf.get("goal", ""), tool_name, raw_result)
+            await update_step_result(chat_id, natural)
+            if stream_callback:
+                await stream_callback({
+                    "type": "step_done",
+                    "step": idx + 1,
+                    "result": natural[:200]
+                })
+        except Exception as e:
+            err = f"❌ 步驟 {idx+1} 執行失敗: {e}"
+            await update_step_result(chat_id, err)
+            if stream_callback:
+                await stream_callback({"type": "reply", "content": err})
+            return err
+
+    close_workflow(chat_id)
+    final_msg = f"🎉 工作流「{wf.get('goal', '')}」已完成！"
+    if stream_callback:
+        await stream_callback({"type": "reply", "content": final_msg})
+        await stream_callback({"type": "done"})
+    return final_msg
+
+
+
+
+
+
+
+
+
+
 
 
 

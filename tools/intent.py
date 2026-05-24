@@ -19,7 +19,7 @@
 #   intent_keywords   : 自然語言觸發關鍵詞列表，支援兩種格式：
 #                         - 字串: "搜尋" → 自動對應到根命令。
 #                         - 元組: ("記住", "/memory remember") → 精確指定子命令。
-#   updata            : 最後更新日期，純註記用。
+#   update            : 最後更新日期，純註記用。
 #   naturalize        : (舊版欄位) 標記是否允許自然化，現已被 naturalize_func 取代。
 #   naturalize_func   : (新版欄位) 指定結果自然化函數的名稱，必須是模組內的 async 函數。
 #                       簽名: async def func(user_text, raw_result, ollama_api, model_name, temp_msg, context) -> str
@@ -30,11 +30,11 @@
 PLUGIN_INFO = {
     "command": "/intent",
     "icon":"🧩",
-    "description": "自然語言意圖辨識 (自動轉換指令，支援動態新增外掛)",
+    "description": "內部意圖識別引擎，非必要不需要直接調用。用於將自然語言轉換為命令。",
     "handler": "dummy_handler",
     "tool_schema": {
         "name": "intent",
-        "description": "內部意圖識別引擎，用於將自然語言轉換為命令，通常不需要直接調用。",
+        "description": "內部意圖識別引擎，用於將自然語言轉換為命令，非必要不需要直接調用。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -46,7 +46,7 @@ PLUGIN_INFO = {
             "required": ["text"]
         }
     },
-    "update": "202605171733"
+    "update": "202605250320"
 }
 
 
@@ -69,15 +69,16 @@ PLUGIN_INFO = {
 
 
 
-import httpx, json, logging, re, html, time
+import httpx, json, logging, re, html, time, os
+import mokagi
 from typing import Dict, Any
 # 全域變數，由主程式透過鉤子傳入
 _cmd_map = {}
 _tools = {}
 _ollama_api = ""
 _model_name = ""
-
-
+# 模型回應的最大等待時間（秒），超過則認定為失敗，避免用戶長時間等待
+_model_timeout = 300.0
 
 
 
@@ -228,6 +229,13 @@ async def rule_based_intent(user_text: str, kw_map: dict) -> tuple:
 # ------------------------------------------------------------------------------------ #
 async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str, model_name: str) -> tuple:
     """使用 LLM 分類意圖，動態生成 prompt（通用版，不硬編碼任何工具）"""
+
+    agent_name = os.environ.get("MOK_AGENT_NAME")
+    ADMIN_NAME = os.environ.get("ADMIN_NAME")# 用戶名稱
+    MOK_AGENT_SPEAKING_STYLE = os.environ.get("MOK_AGENT_SPEAKING_STYLE")# 語氣風格
+    MOK_AGENT_COMMON_LANGUAGE = os.environ.get("MOK_AGENT_COMMON_LANGUAGE")# 慣用語言
+
+
     # 建立指令描述列表
     cmd_desc = []
     for cmd, handler in cmd_map.items():
@@ -243,42 +251,58 @@ async def llm_intent(user_text: str, cmd_map: dict, tools: dict, ollama_api: str
             desc = mod.PLUGIN_INFO.get("description", cmd)
         cmd_desc.append(f"- {cmd}: {desc}")
 
-    prompt = f"""你是一個意圖分類助手。根據使用者輸入，輸出 JSON: {{"command": "指令名稱", "args": "提取的參數"}}
-如果沒有任何指令符合，輸出 {{"command": "none"}}。
+    prompt = f"""妳是{agent_name}，是一個意圖分類助手。根據{ADMIN_NAME}輸入，輸出 JSON：
+- 無需工具且純聊天：{{"command": "chat"}}
+- 需要單一工具：{{"command": "/命令", "args": "參數"}}
+- 需要多步驟任務（如搜索後整理）：{{"command": "/workflow create", "args": "目標"}}
+- 無法匹配：{{"command": "none"}}
 
-可用的指令與說明：
+可用命令說明：
 {chr(10).join(cmd_desc)}
 
-重要指引：
-- 若指令支援子命令（如 /memory 有 remember/recall/list/forgetall），請在 args 中以子命令開頭，例如 "remember 我喜歡咖啡" 或 "list"。
-- 若指令不需要參數，args 留空字串。
+規則：
+- 子命令放在 args 開頭，如 "remember 內容"
+- 無參數時 args 為空字符串
 
-使用者輸入：{user_text}
-只輸出 JSON，不要有其他文字。"""
+用戶輸入：{user_text}
+只輸出 JSON。"""
 
-    payload = {
-        "model": model_name,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"num_predict": 1000, "temperature": 0.1}
-    }
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.post(ollama_api, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            output = data.get("response", "").strip()
-            if "{" in output and "}" in output:
-                output = output[output.find("{"):output.rfind("}")+1]
-            result = json.loads(output)
+        # 使用統一 call_llm 接口
+        response_text = await mokagi.call_llm(
+            prompt=prompt,
+            stream=False,
+            temperature=0.1,
+            num_predict=2000
+        )
+        output = response_text.strip()
+        # 嘗試提取 JSON 對象
+        start = output.find('{')
+        end = output.rfind('}') + 1
+        if start != -1 and end > start:
+            json_str = output[start:end]
+        else:
+            if "chat" in output.lower():
+                return "chat", ""
+            json_str = ""
+
+        if json_str:
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError:
+                logging.warning(f"JSON 解析失敗，原始響應: {output[:200]}")
+                return None, None
             cmd = result.get("command", "none")
             args = result.get("args", "")
+            if cmd == "chat":
+                return "chat", ""
             if cmd != "none" and cmd in cmd_map:
                 return cmd, args
+        else:
+            return "chat", ""
     except Exception as e:
-        logging.warning(f"LLM意圖辨識失敗: {e}")
+        logging.warning(f"LLM意圖辨識失敗: {e}", exc_info=True)
     return None, None
-
 
 
 

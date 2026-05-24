@@ -45,7 +45,7 @@
             position: relative;
         }
         .agent-sidebar.collapsed {
-            width: 40px;
+            width: 60px;
         }
         .agent-sidebar.collapsed .agent-header span,
         .agent-sidebar.collapsed .agent-name {
@@ -516,6 +516,7 @@
                 <button data-tool="files">📁 文件</button>
                 <button data-tool="ascii">🎨 ASCII</button>
                 <button data-tool="monitor">📊 監控</button>
+                <button data-tool="tools">🔧 工具</button>
                 <button data-tool="settings">⚙️ 設定</button>
             </div>
             <button id="toggleToolsPanel">❌</button>
@@ -565,7 +566,7 @@
 <script>
     const socket = io();
     // 全局狀態
-    let currentAgent = '助手';
+    let currentAgent = null;
     let agentList = [];
     let mokConfig = {};
     let agentStartMsg = '';
@@ -651,16 +652,89 @@
         });
     }
 
+    // ---------- 工具列表 ----------
+    function renderToolsContent() {
+        const container = document.getElementById('toolsContent');
+        container.innerHTML = '<div class="tools-loading">加載工具列表中...</div>';
+
+        fetch('/api/tools')
+            .then(res => res.json())
+            .then(data => {
+                const tools = data.tools;
+                if (!tools.length) {
+                    container.innerHTML = '<div>⚠️ 沒有加載任何工具。</div>';
+                    return;
+                }
+                let html = `
+                <div style="padding: 8px;">
+                    <h3>🧰 已安裝工具</h3>
+                    <ul style="list-style: none; padding-left: 0;">
+
+                        <li style="margin-bottom: 16px; border-bottom: 1px solid #3e3e42; padding-bottom: 8px;">
+                            <a href="javascript:void(0);" style="text-decoration: none; color: #4ec9b0;" id="toolsPanelReloadBtn">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.4rem;">🔄</span>
+                                <code style="background: #2d2d30; padding: 2px 6px; border-radius: 6px;">/reload</code>
+                            </div>
+                            <div style="margin-top: 6px; color: #ccc;">重新加載工具</div>
+                            </a>
+                        </li>
+
+
+                        <li style="margin-bottom: 16px; border-bottom: 1px solid #3e3e42; padding-bottom: 8px;">
+                            <a href="https://github.com/64071181/MOKAGI/tree/main/tools" style="text-decoration: none; color: #4ec9b0;" target="_blank">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.4rem;">➕</span>
+                                <code style="background: #2d2d30; padding: 2px 6px; border-radius: 6px;">/tools</code>
+                            </div>
+                            <div style="margin-top: 6px; color: #ccc;">增加工具</div>
+                            </a>
+                        </li>
+                    `;
+                tools.forEach(tool => {
+                    html += `
+                        <li style="margin-bottom: 16px; border-bottom: 1px solid #3e3e42; padding-bottom: 8px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.4rem;">${tool.icon || '🔧'}</span>
+                                <code style="background: #2d2d30; padding: 2px 6px; border-radius: 6px;">${escapeHtml(tool.command)}</code>
+                            </div>
+                            <div style="margin-top: 6px; color: #ccc;">${escapeHtml(tool.description)}</div>
+                        </li>
+                    `;
+                });
+                html += '</ul></div>';
+                container.innerHTML = html;
+
+            // 為工具面板中的重新加載按鈕綁定事件（注意 id 改為 toolsPanelReloadBtn）
+            const reloadBtn = document.getElementById('toolsPanelReloadBtn');
+            if (reloadBtn) {
+                reloadBtn.addEventListener('click', async () => {
+                    await fetch('/api/reload_tools', { method: 'POST' });
+                    alert('工具已重新加載');
+                    renderToolsContent();  // 重新刷新工具列表
+                });
+            }
+        })
+        .catch(err => {
+                console.error('加載工具列表失敗', err);
+                container.innerHTML = '<div>❌ 加載工具列表失敗，請檢查網絡或服務器狀態。</div>';
+            });
+    }
 
     // ---------- Agent ----------
     async function loadAgentList() {
         try {
             const res = await fetch('/api/env_files');
             const data = await res.json();
-            agentList = data.files.map(file => ({ name: file.replace(/^\./, ''), file }));
+            agentList = data.agents.map(agent => ({ name: agent.name, file: agent.file }));
+            agentIcons = {};
+            data.agents.forEach(agent => { agentIcons[agent.name] = agent.icon; });
             renderAgentList();
-            if (agentList.length && !currentAgent) activateAgent(agentList[0].name);
-            else if (agentList.length && currentAgent) activateAgent(currentAgent);
+            
+            // 自動激活第一個 Agent（如果還沒有激活任何 Agent）
+            if (agentList.length && (!currentAgent || !agentList.some(a => a.name === currentAgent))) {
+                await activateAgent(agentList[0].name);
+            }
         } catch (err) { console.error(err); }
     }
     function renderAgentList() {
@@ -668,9 +742,11 @@
         if (!container) return;
         container.innerHTML = '';
         agentList.forEach(agent => {
+            const icon = agentIcons[agent.name] || '🌸';
             const div = document.createElement('div');
             div.className = 'agent-item' + (currentAgent === agent.name ? ' active' : '');
-            div.innerHTML = `<div class="agent-icon">🌸</div><span class="agent-name">${escapeHtml(agent.name)}</span>`;
+            div.title = agent.name;
+            div.innerHTML = `<div class="agent-icon">${icon}</div><span class="agent-name">${escapeHtml(agent.name)}</span>`;
             div.addEventListener('click', () => { if (currentAgent !== agent.name) activateAgent(agent.name); });
             container.appendChild(div);
         });
@@ -693,17 +769,13 @@
                 const configData = await configRes.json();
                 mokConfig = configData;
                 agentStartMsg = mokConfig.MOK_start_msg || '低語：您好～';
+                agenticon = mokConfig.MOK_AGENT_ICON || '🌸';
                 await loadModels();
 
-                // 新增：从 localStorage 读取该 Agent 保存的模型索引
-                const savedModelIndex = localStorage.getItem(`agent_model_${agentName}`);
-                if (savedModelIndex !== null && modelsList[parseInt(savedModelIndex)]) {
-                    await switchModel(parseInt(savedModelIndex), false); // 静默切换，不弹窗
-                } else {
-                    // 如果没有保存，确保使用当前模型索引（可能是0）
-                    if (currentModelIndex !== 0) {
-                        await switchModel(0, false);
-                    }
+                // 不主動切換模型，保持後端已加載的模型（來自配置文件的 MOK_CURRENT_MODEL）
+                // 只需要刷新設置面板的顯示即可
+                if (currentTool === 'settings') {
+                    renderSettingsContent();
                 }
 
                 loadChatHistory();
@@ -732,12 +804,20 @@
             const data = await res.json();
             if (data.status === 'ok') {
                 currentModelIndex = index;
-                // 保存到 localStorage，键名包含当前 Agent
                 localStorage.setItem(`agent_model_${currentAgent}`, index);
                 if (currentTool === 'settings') renderSettingsContent();
-                if (!silent) alert(`已切換到模型: ${data.model.name}`);
+                // 顯示後端返回的完整消息（與 Telegram 版一致）
+                alert(data.message);
+                setTimeout(() => {
+                    location.reload();
+                }, 3000);
+            } else {
+                alert(`切換失敗: ${data.message || '未知錯誤'}`);
             }
-        } catch (err) { console.error(err); }
+        } catch (err) {
+            console.error(err);
+            alert('請求失敗，請檢查網絡或服務器狀態');
+        }
     }
 
 
@@ -751,7 +831,7 @@ async function loadChatHistoryFromServer() {
             // 無歷史，創建默認歡迎語並保存到服務器
             const defaultMsg = {
                 role: 'assistant',
-                content: `🌸 ${currentAgent}${agentStartMsg}`,
+                content: `${agenticon} ${currentAgent}${agentStartMsg}`,
                 thinkContent: null,
                 timestamp: Date.now() / 1000
             };
@@ -769,7 +849,7 @@ async function loadChatHistoryFromServer() {
         console.error('加載歷史失敗', err);
         return [{
             role: 'assistant',
-            content: `🌸 ${currentAgent}${agentStartMsg}`,
+            content: `${agenticon} ${currentAgent}${agentStartMsg}`,
             thinkContent: null,
             timestamp: Date.now()
         }];
@@ -831,7 +911,7 @@ function renderChatMessages(messages) {
         } else {
             const div = document.createElement('div');
             div.className = 'message assistant';
-            const thinkHtml = msg.thinkContent ? `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}思考中...</div><div class="think-content">${escapeHtml(msg.thinkContent)}</div></div>` : '';
+            const thinkHtml = msg.thinkContent ? `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">${agenticon} ${currentAgent}思考中...</div><div class="think-content">${escapeHtml(msg.thinkContent)}</div></div>` : '';
             const content = escapeHtml(msg.content);
             const time = new Date(msg.timestamp).toLocaleTimeString();
             const renderedContent = renderMarkdown(msg.content);
@@ -896,7 +976,7 @@ async function addAssistantMessageAndSave(thinkContent, replyContent) {
     div.className = 'message assistant';
     // 替換 addAssistantMessageAndSave 函數內的 div.innerHTML 行
     const content = escapeHtml(replyContent);
-    const thinkHtml = thinkContent ? `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}思考中...</div><div class="think-content">${escapeHtml(thinkContent)}</div></div>` : '';
+    const thinkHtml = thinkContent ? `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">${agenticon} ${currentAgent}思考中...</div><div class="think-content">${escapeHtml(thinkContent)}</div></div>` : '';
     const renderedContent = renderMarkdown(replyContent);
     div.innerHTML = thinkHtml + `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
@@ -920,6 +1000,11 @@ async function clearAllChats() {
 }
 
     function sendUserMessage(content) {
+        // 防止未選中 Agent 時發送消息
+        if (!currentAgent) {
+            alert('請稍等，正在加載 Agent...');
+            return;
+        }
         // 1. 清理所有未完成的助手佔位符（meta含"回應中"）
         document.querySelectorAll('.message.assistant').forEach(el => {
             const meta = el.querySelector('.message-meta');
@@ -962,7 +1047,7 @@ async function clearAllChats() {
         // 5. 創建助手佔位符（現在肯定在用戶消息下方）
         const assistantDiv = document.createElement('div');
         assistantDiv.className = 'message assistant';
-        assistantDiv.innerHTML = `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}思考中...</div><div class="think-content"></div></div>
+        assistantDiv.innerHTML = `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">${agenticon} ${currentAgent}思考中...</div><div class="think-content"></div></div>
                                 <div class="message-bubble" style="background:#3a3a3d;"></div>
                                 <div class="message-meta">${currentAgent} · 回應中</div>`;
         chatMessagesDiv.appendChild(assistantDiv);
@@ -973,7 +1058,7 @@ async function clearAllChats() {
         currentReplyDiv = assistantDiv.querySelector('.message-bubble');
 
         // 6. 發送 socket 消息
-        socket.emit('chat_message', { message: content });
+        socket.emit('chat_message', { message: content, agent: currentAgent });
     }
 
     
@@ -990,6 +1075,10 @@ async function clearAllChats() {
             currentReplyDiv = null;
             currentThinkDiv = null;
             currentAssistantDiv = null;
+            // 等待1秒后刷新网页
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
         }
     }
 
@@ -1088,27 +1177,39 @@ async function clearAllChats() {
     function renderAsciiContent() {
         document.getElementById('toolsContent').innerHTML = '<iframe src="/ASCII.html" style="width:100%; height:100%; border:none; border-radius:8px;"></iframe>';
     }
+
+
     function renderSettingsContent() {
         const container = document.getElementById('toolsContent');
-        const options = modelsList.map((m, idx) => `<option value="${idx}" ${idx === currentModelIndex ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
-        container.innerHTML = `
-            <div style="padding:12px;">
-                <h3>⚙️ 系統設定</h3>
-                <div style="margin:16px 0;"><label>🤖 當前模型</label>
-                    <select id="modelSelect" style="width:100%; margin-top:8px; background:#1e1e1e; border:1px solid #4ec9b0; border-radius:20px; padding:6px;">${options}</select>
-                    <button id="applyModelBtn" style="margin-top:8px;">應用模型</button>
+        const buildAndRender = (selectedModelName) => {
+            const options = modelsList.map((m, idx) => {
+                const selected = (m.name === selectedModelName) ? 'selected' : '';
+                return `<option value="${idx}" ${selected}>${escapeHtml(m.name)}</option>`;
+            }).join('');
+            container.innerHTML = `
+                <div style="padding:12px;">
+                    <h3>⚙️ 系統設定</h3>
+                    <div style="margin:16px 0;"><label>🤖 當前模型</label>
+                        <select id="modelSelect" style="width:100%; margin-top:8px; background:#1e1e1e; border:1px solid #4ec9b0; border-radius:20px; padding:6px;">${options}</select>
+                        <button id="applyModelBtn" style="margin-top:8px;">應用模型</button>
+                    </div>
                 </div>
-                <div><button id="reloadToolsBtn">🔄 重新加載工具</button></div>
-            </div>
-        `;
-        document.getElementById('applyModelBtn')?.addEventListener('click', () => {
-            const idx = parseInt(document.getElementById('modelSelect').value);
-            switchModel(idx);
-        });
-        document.getElementById('reloadToolsBtn')?.addEventListener('click', async () => {
-            await fetch('/api/reload_tools', { method: 'POST' });
-            alert('工具已重新加載');
-        });
+            `;
+            document.getElementById('applyModelBtn')?.addEventListener('click', () => {
+                const idx = parseInt(document.getElementById('modelSelect').value);
+                switchModel(idx);
+            });
+        };
+
+        // 優先通過 API 獲取當前模型名稱
+        fetch('/api/current_model')
+            .then(res => res.json())
+            .then(data => buildAndRender(data.model))
+            .catch(err => {
+                console.warn('無法獲取當前模型，使用內存中的 currentModelIndex', err);
+                const fallbackName = modelsList[currentModelIndex]?.name || '';
+                buildAndRender(fallbackName);
+            });
     }
 
     function renderMonitorContent() {
@@ -1125,7 +1226,8 @@ async function clearAllChats() {
         if (tool === 'files') renderFilesContent();
         else if (tool === 'ascii') renderAsciiContent();
         else if (tool === 'settings') renderSettingsContent();
-        else if (tool === 'monitor') renderMonitorContent(); 
+        else if (tool === 'monitor') renderMonitorContent();
+        else if (tool === 'tools') renderToolsContent();
     }
 
     // 側邊欄拖拽調整寬度
@@ -1215,11 +1317,11 @@ async function clearAllChats() {
     // Socket 事件
     socket.on('chat_stream', (data) => {
     if (data.type === 'think') {
-        // 如果没有占位符，自动创建一个
+        // 如果沒有佔位符，自動創建一個
         if (!currentThinkDiv) {
             const assistantDiv = document.createElement('div');
             assistantDiv.className = 'message assistant';
-            assistantDiv.innerHTML = `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">💭 ${currentAgent}</div><div class="think-content"></div></div>
+            assistantDiv.innerHTML = `<div class="think-container"><div style="font-size:0.7rem; color:#e0a800;">${agenticon} ${currentAgent}</div><div class="think-content"></div></div>
                                     <div class="message-bubble" style="background:#3a3a3d;"></div>
                                     <div class="message-meta">${currentAgent} · 回應中</div>`;
             chatMessagesDiv.appendChild(assistantDiv);
@@ -1234,7 +1336,7 @@ async function clearAllChats() {
             scrollToBottom();
         }
     } else if (data.type === 'reply') {
-        // 保持原有逻辑不变
+        // 保持原有邏輯不變
         if (currentReplyDiv) {
             currentReplyDiv.innerText += data.content;
             accumulatedReply += data.content;
@@ -1248,10 +1350,13 @@ async function clearAllChats() {
             }
         }
     } else if (data.type === 'done') {
-        // 保持原有逻辑不变
         if (currentReplyDiv && accumulatedReply) {
-            if (currentAssistantDiv) currentAssistantDiv.remove();
-            addAssistantMessageAndSave(accumulatedThink, accumulatedReply);
+            // 不再重複保存，只更新元數據（不再顯示“回應中”）
+            if (currentAssistantDiv) {
+                const meta = currentAssistantDiv.querySelector('.message-meta');
+                if (meta) meta.innerText = `${currentAgent} · ${new Date().toLocaleTimeString()}`;
+                // 不需要移除，保留當前消息作為最終顯示
+            }
         }
         currentThinkDiv = null;
         currentReplyDiv = null;

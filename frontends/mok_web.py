@@ -2,7 +2,7 @@
 mok_web.py
 網頁前端適配器（基於 mokagi）
 提供文件瀏覽器、系統監控、聊天界面，所有 AI 對話能力調用 mokagi 模塊。
-202605171733
+202605250320
 """
 
 import os, sys
@@ -65,7 +65,6 @@ class FileChangeHandler(FileSystemEventHandler):
             return
         rel_path = os.path.relpath(event.src_path, WATCH_PATH)
         if rel_path.startswith(self.ALLOWED_PREFIXES) and not rel_path.endswith('.tmp'):
-            #print(f"File modified: {rel_path}")
             self.socketio.emit('file_change', {'path': rel_path})
 
 def get_file_tree(path):
@@ -76,7 +75,7 @@ def get_file_tree(path):
         if current_path == base_path:
             items = [item for item in ALLOWED_PATHS if os.path.exists(os.path.join(current_path, item))]
         else:
-            items = sorted([f for f in os.listdir(current_path) if not f.startswith('.')])
+            items = sorted([f for f in os.listdir(current_path)])   # 不再過濾隱藏文件
     except PermissionError:
         return []
     for item in items:
@@ -121,7 +120,7 @@ def parse_dot_ming():
     config = {}
     models = []
     if not os.path.exists(DOT_MING_PATH):
-        models = [{"name": "huihui_ai/qwen3-abliterated:1.7b", "url": "http://localhost:11434/api/generate"}]
+        models = [{"name": "huihui_ai/qwen3-abliterated:1.7b", "url": "http://localhost:11434/v1"}]
         config = {
             "num_predict": 8192,
             "num_ctx": 16384,
@@ -148,7 +147,7 @@ def parse_dot_ming():
                 val = val[1:-1]
             config[key] = val
     name_pattern = re.compile(r'^MOK_MODEL_NAME(\d*)$')
-    url_pattern = re.compile(r'^MOK_MODEL_api(\d*)$')
+    url_pattern = re.compile(r'^MOK_MODEL_url(\d*)$')
     name_dict = {}
     url_dict = {}
     for key, val in config.items():
@@ -167,7 +166,7 @@ def parse_dot_ming():
         if name and url:
             models.append({"name": name, "url": url})
     if not models:
-        models = [{"name": "huihui_ai/qwen3-abliterated:1.7b", "url": "http://localhost:11434/api/generate"}]
+        models = [{"name": "huihui_ai/qwen3-abliterated:1.7b", "url": "http://localhost:11434/v1"}]
     ollama_options = {
         "num_predict": int(config.get("MOK_num_predict", 8192)),
         "num_ctx": int(config.get("MOK_num_ctx", 16384)),
@@ -186,7 +185,7 @@ def parse_dot_ming():
 OLLAMA_OPTIONS, AVAILABLE_MODELS = parse_dot_ming()
 CURRENT_MODEL_INDEX = 0
 os.environ['MOK_ADMIN_CHAT_ID'] = MOK_CONFIG.get('MOK_ADMIN_CHAT_ID', '')
-print(f"設置 MOK_ADMIN_CHAT_ID = {os.environ['MOK_ADMIN_CHAT_ID']}")
+#print2(f"設置 MOK_ADMIN_CHAT_ID = {os.environ['MOK_ADMIN_CHAT_ID']}")
 
 def get_current_model_config():
     return AVAILABLE_MODELS[CURRENT_MODEL_INDEX]
@@ -208,32 +207,82 @@ def reload_config(env_path):
     options, models = parse_dot_ming()
     OLLAMA_OPTIONS = options
     AVAILABLE_MODELS = models
-    CURRENT_MODEL_INDEX = 0
+    
+    # --- 修改開始：根據配置文件中的 MOK_CURRENT_MODEL 設置索引 ---
+    # 讀取配置文件，獲取 MOK_CURRENT_MODEL
+    current_model_name = None
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('MOK_CURRENT_MODEL='):
+                    current_model_name = line.split('=', 1)[1].strip()
+                    # 去除可能的引號
+                    if (current_model_name.startswith('"') and current_model_name.endswith('"')) or \
+                       (current_model_name.startswith("'") and current_model_name.endswith("'")):
+                        current_model_name = current_model_name[1:-1]
+                    break
+    except Exception:
+        pass
+    
+    # 查找索引
+    new_index = 0
+    if current_model_name:
+        for i, m in enumerate(AVAILABLE_MODELS):
+            if m['name'] == current_model_name:
+                new_index = i
+                break
+    CURRENT_MODEL_INDEX = new_index
+    # --- 修改結束 ---
+    
     os.environ['MOK_ADMIN_CHAT_ID'] = MOK_CONFIG.get('MOK_ADMIN_CHAT_ID', '')
-    # 同步 mokagi 的配置（模型名稱、API、參數）
+    # 同步 mokagi 配置
     mokagi.MOK_MODEL_NAME = get_current_model_config()['name']
     mokagi.OLLAMA_API = get_current_model_config()['url']
     mokagi.OLLAMA_OPTIONS.update(OLLAMA_OPTIONS)
     agent_name = os.path.basename(env_path).lstrip('.')
     os.environ['AD_MOK_AGENT_NAME'] = agent_name
-    print(f"同步 mokagi 配置: model={mokagi.MOK_MODEL_NAME}, api={mokagi.OLLAMA_API}")
+    mokagi.MOK_AGENT_NAME = agent_name
+    mokagi._agent_config = mokagi.load_agent_config(agent_name)
+
+    # 重新加載所有工具模塊，使其基於新的 Agent 配置重新初始化
+    tool_handler.load_tools()
+    # 額外清理 memory 模塊的 chromadb 客戶端（確保重新連接）
+    memory_mod = tool_handler.get_tools().get("memory")
+    if memory_mod and hasattr(memory_mod, '_client'):
+        memory_mod._client = None
+        memory_mod._collection = None
+        memory_mod._kb_collection = None
 
 # ---------- SocketIO 聊天（核心）----------
+# 在 mok_web.py 文件開頭添加（或從環境變量獲取）
+ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "none")
 @socketio.on('chat_message')
 def handle_chat_message(data):
     user_msg = data.get('message', '').strip()
+    agent_name = data.get('agent', '')   # 從前端接收當前 agent
     if not user_msg:
         return
+    #user_id = request.sid
+    user_id = ADMIN_CHAT_ID
 
-    # 使用 session id 作為 user_id（也可以使用 IP + User-Agent 組合，這裡簡單用 request.sid）
-    user_id = request.sid
+    # 累加器
+    accumulated_think = ""
+    accumulated_reply = ""
 
-    # 定義流式回調函數，將 mokagi 的事件轉發到前端
     async def stream_callback(event):
-        # event 格式: {"type": "think"|"reply"|"done", "content": str}
+        nonlocal accumulated_think, accumulated_reply
+        if event["type"] == "think":
+            accumulated_think += event["content"]
+        elif event["type"] == "reply":
+            accumulated_reply += event["content"]
+        elif event["type"] == "done":
+            # 後端保存完整的助手回覆（防止前端斷開）
+            if accumulated_reply and agent_name:
+                _save_assistant_message(agent_name, accumulated_reply, accumulated_think)
+        # 始終轉發給前端（若前端在線，正常顯示）
         socketio.emit('chat_stream', event, room=request.sid)
 
-    # 在新的事件循環中運行異步處理
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -246,12 +295,27 @@ def handle_chat_message(data):
     finally:
         loop.close()
 
+
+def _save_assistant_message(agent, content, think_content):
+    """保存助手回覆到數據庫（同步，避免阻塞）"""
+    import time
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            'INSERT INTO chat_history (agent, role, content, think_content, timestamp) VALUES (?, ?, ?, ?, ?)',
+            (agent, 'assistant', content, think_content, time.time())
+        )
+        conn.commit()
+
+
 @socketio.on('stop_generation')
 def handle_stop():
-    # 停止生成（需要 mokagi 支持中斷，當前版本未實現，保留接口）
     sid = request.sid
-    socketio.emit('stream_stopped', room=sid)
-    print(f"Stopped generation for {sid}")
+    import subprocess
+    # 先通知前端服務即將重啟（可選）
+    socketio.emit('stream_stopped', {'status': 'restarting'}, room=sid)
+    # 立即執行 pm2 restart（不等待，後臺運行）
+    subprocess.Popen("pm2 restart mok_agi", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"立即停止所有服務及緊急重啟，發起者: {sid}")
 
 # ---------- 網頁路由（保持不變）----------
 @app.route('/')
@@ -296,7 +360,26 @@ def send_raw_file(sub_path):
 def get_env_files_api():
     files = get_env_files()
     current = os.path.basename(CURRENT_ENV_PATH) if CURRENT_ENV_PATH else ""
-    return {"files": files, "current": current}
+    # 為每個 agent 獲取圖標
+    agents = []
+    for f in files:
+        agent_name = f.lstrip('.')
+        icon = '🌸'  # 默認
+        config_path = os.path.join(ENV_DIR, f)
+        try:
+            with open(config_path, 'r', encoding='utf-8') as cf:
+                for line in cf:
+                    line = line.strip()
+                    if line.startswith('MOK_AGENT_ICON='):
+                        val = line.split('=', 1)[1].strip()
+                        if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                            val = val[1:-1]
+                        icon = val
+                        break
+        except:
+            pass
+        agents.append({"name": agent_name, "file": f, "icon": icon})
+    return {"agents": agents, "current": current}
 
 @app.route('/api/set_env', methods=['POST'])
 def set_env():
@@ -318,31 +401,84 @@ def get_mok_config():
 def get_models():
     return {"models": AVAILABLE_MODELS, "current_index": CURRENT_MODEL_INDEX}
 
+
+
+
 @app.route('/api/set_model', methods=['POST'])
 def set_model():
     global CURRENT_MODEL_INDEX
     data = request.get_json()
+    model_name = None
+    idx = None
+    
     if 'index' in data:
         idx = int(data['index'])
         if 0 <= idx < len(AVAILABLE_MODELS):
-            CURRENT_MODEL_INDEX = idx
-            # 同步 mokagi 配置
-            mokagi.MOK_MODEL_NAME = AVAILABLE_MODELS[idx]['name']
-            mokagi.OLLAMA_API = AVAILABLE_MODELS[idx]['url']
-            return {"status": "ok", "model": AVAILABLE_MODELS[idx]}
+            model_name = AVAILABLE_MODELS[idx]['name']
     elif 'name' in data:
+        model_name = data['name']
+        # 查找索引
         for i, m in enumerate(AVAILABLE_MODELS):
-            if m['name'] == data['name']:
-                CURRENT_MODEL_INDEX = i
-                mokagi.MOK_MODEL_NAME = m['name']
-                mokagi.OLLAMA_API = m['url']
-                return {"status": "ok", "model": m}
-    return {"status": "error", "message": "Invalid model"}, 400
+            if m['name'] == model_name:
+                idx = i
+                break
+    
+    if not model_name or idx is None:
+        return {"status": "error", "message": "Invalid model"}, 400
+    
+    # 調用 admin 插件的 set_model_in_config 函數
+    admin_mod = tool_handler.get_tools().get("admin")
+    if not admin_mod or not hasattr(admin_mod, "set_model_in_config"):
+        return {"status": "error", "message": "Admin module not loaded"}, 500
+    
+    result_message = admin_mod.set_model_in_config(model_name)
+    
+    # 如果成功（消息以 ✅ 開頭），則更新內存中的當前模型索引
+    if result_message.startswith("✅"):
+        CURRENT_MODEL_INDEX = idx
+        # 同步 mokagi 配置
+        mokagi.MOK_MODEL_NAME = model_name
+        mokagi.OLLAMA_API = AVAILABLE_MODELS[idx]['url']
+    
+        # 新增：異步重啟統一進程（2 秒後重啟，讓當前請求先返回）
+        import subprocess
+        subprocess.Popen(
+            "(sleep 2 && pm2 restart mok_agi) > /dev/null 2>&1 &",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    return {"status": "ok" if result_message.startswith("✅") else "error", "message": result_message, "model": {"name": model_name}}
+
+
+
+
+
+
+
+
+
 
 @app.route('/api/current_model')
 def get_current_model():
     config = get_current_model_config()
     return {"model": config['name']}
+
+@app.route('/api/tools')
+def get_tools():
+    """返回所有已加載的工具列表（用於前端展示）"""
+    tools_list = []
+    for mod in tool_handler.get_tools().values():
+        if hasattr(mod, "PLUGIN_INFO"):
+            info = mod.PLUGIN_INFO
+            tools_list.append({
+                "command": info.get("command", ""),
+                "description": info.get("description", ""),
+                "icon": info.get("icon", "🔧")
+            })
+    # 按命令名稱排序
+    tools_list.sort(key=lambda x: x["command"])
+    return {"tools": tools_list}
 
 # ---------- 系統監控 API（保持不變）----------
 @app.route('/api/system/cpu')

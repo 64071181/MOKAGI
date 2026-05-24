@@ -12,25 +12,29 @@
 #   description       : 簡短描述，用於命令選單。
 #   intent_keywords   : 自然語言觸發詞列表，元組格式（關鍵詞, 完整命令）。
 #   tool_schema       : 提供給 LLM 的工具定義，描述參數與用途。
-#   updata            : 最後更新日期。
+#   update            : 最後更新日期。
 # ------------------------------------------------------------------------------------ #
 PLUGIN_INFO = {
     "command": "/memory",
     "icon":"🧠",
-    "description": "長期記憶 (remember, recall, list, forgetall, chromadb)",
+    "description": "長期記憶管理：記住信息(remember)、回憶記憶(recall)、列出記憶(list)、更新記憶(update)、刪除記憶(delete)、清空記憶(forgetall)、重建知識庫(rebuild_kb)、列出知識庫(list_kb)。",
     "handler": "handle_memory",
     "intent_keywords": [
-        ("/up識", "/memory rebuild_kb"),
+        ("新知識", "/memory rebuild_kb"),
 
-        ("/知識", "/memory list_kb"),
+        ("知識", "/memory list_kb"),
 
-        ("/記", "/memory remember"),
+        ("記住", "/memory remember"),
 
-        ("/之前", "/memory recall"),
+        ("之前", "/memory recall"),
 
-        ("/回憶", "/memory list"),
+        ("剛剛", "/memory recall"),
+
+        ("回憶", "/memory list"),
+
+        ("記憶", "/memory list")
     ],
-    "updata":"202605171733",
+    "update":"202605250320",
     "tool_schema": {
     "name": "memory",
     "description": "管理長期記憶和知識庫。支持記住信息、回憶信息、列出記憶、刪除記憶、清空記憶、重建知識庫、列出知識庫。",
@@ -63,21 +67,15 @@ PLUGIN_INFO = {
 
 
 
-import logging, os, re, chromadb, hashlib
+import logging, os, re, chromadb, hashlib, json
 from chromadb.config import Settings
 
-# 全局变量初始化
+# 全局變量初始化
 _EMBED_AVAILABLE = None
 _embed_fn = None
-_kb_collection = None
 _client = None
-_collection = None
 MISSING_DEPS = False
 
-
-# agent 名稱
-mokagi_name = os.environ.get("AD_AgiName")
-MOK_AGENT_NAME = os.environ.get("AD_MOK_AGENT_NAME", "default")
 
 
 # ------------------------------------------------------------------------------------ #
@@ -99,18 +97,24 @@ def sanitize_name_for_chromadb(raw_name: str) -> str:
     # 確保首字符為字母（ChromaDB 要求）
     return f"agent_{hash_hex}"
 
-safe_MOK_AGENT_NAME = sanitize_name_for_chromadb(MOK_AGENT_NAME)
 
 # 明確指定數據存儲路徑
-CHROMA_PATH = os.path.join(os.path.expanduser("~"), f".{mokagi_name}", "chroma_data")
-KNOWLEDGE_DIR = os.path.expanduser(f"~/.{mokagi_name}/{MOK_AGENT_NAME}")
+MOKAGI_HOME = os.environ.get("MOKAGI_HOME", "mok")
+CHROMA_PATH = os.path.join(os.path.expanduser("~"), f".{MOKAGI_HOME}", "chroma_data")
 
 
 
 
+# ========== 動態獲取當前 Agent 名稱的工具函數 ==========
+def _get_safe_agent_name():
+    import mokagi
+    name = mokagi.MOK_AGENT_NAME
+    hash_hex = hashlib.md5(name.encode()).hexdigest()[:16]
+    return f"agent_{hash_hex}"
 
-
-
+def _get_knowledge_dir():
+    import mokagi
+    return os.path.expanduser(f"~/.{mokagi.MOKAGI_home}/{mokagi.MOK_AGENT_NAME}")
 
 
 
@@ -163,34 +167,33 @@ def _init_embedding():
         return _EMBED_AVAILABLE
     try:
         from chromadb.utils import embedding_functions
-        # 这里不会立即加载模型，只是获取函数类
+        # 這裡不會立即加載模型，只是獲取函數類
         _embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-        # 尝试创建一次 collection 以触发模型下载/加载（但仅在需要时）
+        # 嘗試創建一次 collection 以觸發模型下載/加載（但僅在需要時）
         _EMBED_AVAILABLE = True
-        logging.info("sentence-transformers 可用，知识库功能已启用")
+        logging.info("sentence-transformers 可用，知識庫功能已啟用")
     except ImportError:
         _EMBED_AVAILABLE = False
         MISSING_DEPS = True
-        logging.warning("sentence-transformers 未安装，知识库功能将不可用")
+        logging.warning("sentence-transformers 未安裝，知識庫功能將不可用")
     return _EMBED_AVAILABLE
 
 def get_kb_collection():
-    """延迟初始化知识库 collection，仅当需要时创建"""
-    global _kb_collection, _client
-    if _kb_collection is None:
-        if not _init_embedding():
-            return None
-        if _client is None:
-            _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
-        try:
-            _kb_collection = _client.get_or_create_collection(
-                name=f"{safe_MOK_AGENT_NAME}_room",
-                embedding_function=_embed_fn
-            )
-        except Exception as e:
-            logging.error(f"创建知识库 collection 失败: {e}")
-            return None
-    return _kb_collection
+    """延遲初始化知識庫 collection，每次根據當前 Agent 名稱動態獲取"""
+    if not _init_embedding():
+        return None
+    global _client
+    if _client is None:
+        _client = chromadb.PersistentClient(path=CHROMA_PATH, settings=Settings(anonymized_telemetry=False))
+    try:
+        collection_name = f"{_get_safe_agent_name()}_room"
+        return _client.get_or_create_collection(
+            name=collection_name,
+            embedding_function=_embed_fn
+        )
+    except Exception as e:
+        logging.error(f"創建知識庫 collection 失敗: {e}")
+        return None
 
 # ------------------------------------------------------------------------------------ #
 # 函數: _col
@@ -201,24 +204,23 @@ def get_kb_collection():
 #   chromadb.Collection: 使用者記憶 collection。
 # ------------------------------------------------------------------------------------ #
 def _col():
-    """取得使用者記憶的 ChromaDB collection 物件，若尚未初始化則自動建立。"""
-    global _collection, _client, MISSING_DEPS
+    """取得使用者記憶的 ChromaDB collection 物件，每次根據當前 Agent 名稱動態獲取"""
+    global _client, MISSING_DEPS
     if MISSING_DEPS:
-        # 缺少必要依赖（如 chromadb），返回 None，调用方应检查
         return None
-    if _collection is None:
-        try:
-            if _client is None:
-                _client = chromadb.PersistentClient(
-                    path=CHROMA_PATH,
-                    settings=Settings(anonymized_telemetry=False)
-                )
-            _collection = _client.get_or_create_collection(name=f"{safe_MOK_AGENT_NAME}_user_memory")
-        except Exception as e:
-            logging.error(f"初始化用户记忆 collection 失败: {e}")
-            MISSING_DEPS = True
-            return None
-    return _collection
+    try:
+        if _client is None:
+            _client = chromadb.PersistentClient(
+                path=CHROMA_PATH,
+                settings=Settings(anonymized_telemetry=False)
+            )
+        # 每次根據當前 Agent 獲取 collection，不使用全局緩存
+        collection_name = f"{_get_safe_agent_name()}_user_memory"
+        return _client.get_or_create_collection(name=collection_name)
+    except Exception as e:
+        logging.error(f"初始化用戶記憶 collection 失敗: {e}")
+        MISSING_DEPS = True
+        return None
 
 # ------------------------------------------------------------------------------------ #
 # 函數: chunk_markdown_by_headings
@@ -293,21 +295,22 @@ def chunk_markdown_by_headings(content: str, max_chars=500) -> list:
 # ------------------------------------------------------------------------------------ #
 def rebuild_knowledge_base():
     """掃描 room，將 .md 文件切塊後存入知識庫 ChromaDB collection。"""
-    # 使用 get_kb_collection 获取知识库对象，它会自动检查依赖
+    # 使用 get_kb_collection 獲取知識庫對象，它會自動檢查依賴
     kb = get_kb_collection()
     if kb is None:
         return "❌ 知識庫功能未啟用，請安裝 sentence-transformers 並重啟。"
-    if not os.path.exists(KNOWLEDGE_DIR):
-        return f"❌ 知識庫目錄不存在，請建立 {KNOWLEDGE_DIR} 並放入 .md 檔案。"
+    knowledge_dir = _get_knowledge_dir()
+    if not os.path.exists(knowledge_dir):
+        return f"❌ 知識庫目錄不存在，請建立 {knowledge_dir} 並放入 .md 檔案。"
     try:
         kb.delete(where={"source": "kb"})
     except:
         pass
     count = 0
-    for filename in os.listdir(KNOWLEDGE_DIR):
+    for filename in os.listdir(knowledge_dir):
         if not filename.endswith('.md'):
             continue
-        filepath = os.path.join(KNOWLEDGE_DIR, filename)
+        filepath = os.path.join(knowledge_dir, filename)
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
         chunks = chunk_markdown_by_headings(content, max_chars=500)
@@ -321,7 +324,7 @@ def rebuild_knowledge_base():
                 ids=[doc_id]
             )
             count += 1
-    return f"✅ {MOK_AGENT_NAME} 已更新 {count} 個知識塊（按標題分塊）。"
+    return f"✅ {_get_safe_agent_name()} 已更新 {count} 個知識塊（按標題分塊）。"
 
 
 
@@ -533,6 +536,14 @@ async def recall_memory(chat_id: int, query: str, n_results: int = 1, include_kb
 # ------------------------------------------------------------------------------------ #
 
 async def handle_memory(args: str, chat_id: str = None):
+    import mokagi 
+
+    agent_name = os.environ.get("MOK_AGENT_NAME")
+    ADMIN_NAME = os.environ.get("ADMIN_NAME")# 用戶名稱
+    MOK_AGENT_SPEAKING_STYLE = os.environ.get("MOK_AGENT_SPEAKING_STYLE")# 語氣風格
+    MOK_AGENT_COMMON_LANGUAGE = os.environ.get("MOK_AGENT_COMMON_LANGUAGE")# 慣用語言
+
+
     if MISSING_DEPS:
         msg = (
             "❌ 記憶工具缺少必要套件：`chromadb`、`sentence-transformers`\n\n"
@@ -541,15 +552,37 @@ async def handle_memory(args: str, chat_id: str = None):
             "發送後會要求二次確認，輸入確認碼即可自動安裝。"
         )
         return msg
-    if chat_id is None:
-        return "❌ 無法識別使用者。"
+    # 獲取環境變量中的管理員 ID
+    admin_chat_id = os.environ.get("ADMIN_CHAT_ID", "")
+    admin_chat_id_web = os.environ.get("MOK_ADMIN_CHAT_ID", "")
+    
+   # 統一使用固定的 user_id，避免因前端不同或 session 變化導致記憶隔離
+    chat_id = admin_chat_id if admin_chat_id else admin_chat_id_web
 
+    print(f" ======= chat_id: {chat_id} ======= ")
+   # 兼容字典輸入（來自 LLM 工具調用）
+    if isinstance(args, dict):
+        # 如果包含 action 和 content，轉換為 "action content" 格式
+        action = args.get("action", "")
+        content = args.get("content", "")
+        if action:
+            args = f"{action} {content}".strip()
+        else:
+            # 否則轉為 JSON 字符串
+            args = json.dumps(args, ensure_ascii=False)
+    elif not isinstance(args, str):
+        args = str(args)
+    
+    # 確保 args 是字符串
+    if not isinstance(args, str):
+        args = ""
     args = args.strip()
+    
     if not args:
         help_text = f'''
 
 📚 知識庫使用說明：
-    (在 {mokagi_name} 目錄下建立 {MOK_AGENT_NAME} 資料夾，並放入 .md 檔案。)
+    (在 {mokagi.MOKAGI_home} 目錄下建立 {mokagi.MOK_AGENT_NAME} 資料夾，並放入 .md 檔案。)
 
     更新知識庫<pre>/memory rebuild_kb</pre>
 
@@ -600,17 +633,17 @@ async def handle_memory(args: str, chat_id: str = None):
             normalized = content
             # 移除開頭的「記得」或「記住」
             normalized = re.sub(r'^(?:記住)\s*', '', normalized)
-            # 將「我」→「主人」
-            normalized = re.sub(r'我', '主人', normalized)
+            # 將「我」→「用戶」
+            normalized = re.sub(r'我', ADMIN_NAME, normalized)
             # 將「你/妳」→「MOK_AGENT_NAME」
-            normalized = re.sub(r'你|妳', MOK_AGENT_NAME, normalized)
+            normalized = re.sub(r'你|妳|您', agent_name, normalized)
             # ------------------------------------------------------------------
             col.add(
                 documents=[normalized],
                 metadatas=[{"chat_id": chat_id}],
                 ids=[f"{chat_id}_{col.count()}"]
             )
-            return f"✅ {MOK_AGENT_NAME} 已記住 [{normalized}]"
+            return f"✅ {mokagi.MOK_AGENT_NAME} 已記住 [{normalized}]"
 
         # -------------------------------------------------------------------------------- #
         # 子命令: recall

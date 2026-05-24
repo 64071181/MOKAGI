@@ -11,7 +11,7 @@
 #   intent_keywords   : 自然語言觸發詞列表，元組格式（關鍵詞, 完整命令）。
 #   naturalize_func   : 結果自然化函數名 "naturalize_admin_result"。
 #   tool_schema       : 提供給 LLM 的工具定義，描述參數與用途。
-#   updata            : 最後更新日期。
+#   update            : 最後更新日期。
 # ------------------------------------------------------------------------------------ #
 
 
@@ -19,25 +19,31 @@ PLUGIN_INFO = {
     "command": "/admin",  # 這個命令會出現在 TG 菜單
     "icon":"🤖",
     "handler": "handle_admin",
-    "description": "管理工具 (read_file, htop, ollama list, rm, pip install , exec 等)",
+    "description": "系統管理工具：查看系統負載(cpu/htop)、讀取文件(read_file)、列出/切換/刪除Ollama模型(mode/set_model/ollama_rm)、安裝Python包(pip install)、查看日誌(logs)、執行Shell命令(exec)*所有需要新增工具如創建程式，修改一切主機內容，都有可能用這(exec)功能做到，必須小心使用*。",
     "intent_keywords": [
 
-        ("/讀", "/admin read_file"),
+        ("讀本機", "/admin read_file"),
+        ("查看", "/admin read_file"),
+        ("~/", "/admin read_file"),
 
-        ("/htop", "/admin htop"),
+        ("htop", "/admin htop"),
 
-        ("/cpu", "/admin cpu"),
+        ("cpu", "/admin cpu"),
 
-        ("/模型", "/admin mode"),
+        ("現在模型", "/admin mode"),
 
-        ("/換模型", "/admin set_model "),
+        ("轉模型", "/admin set_model "),
 
-        ("/logs", "/admin logs")
+        ("logs", "/admin logs"),
+
+        ("pip", "/admin pip install"),
+
+        ("妳可以", "/admin exec"),
     ],
     "naturalize_func": "naturalize_admin_result",
     "tool_schema": {
         "name": "admin",
-        "description": "執行系統管理操作，包括查看負載、CPU、模型列表、日誌，切換模型，刪除模型，安裝 pip 包，執行 shell 命令，以及讀取文件。",
+        "description": "執行系統管理操作，包括查看負載、CPU、模型列表、日誌，切換模型，刪除模型，安裝 pip 包以及讀取文件，執行 shell 命令(exec)*所有需要新增工具如創建程式，修改一切主機內容，都有可能用這(exec)功能做到，必須小心使用*。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -54,15 +60,16 @@ PLUGIN_INFO = {
             "required": ["action"]
         }
     },
-    "updata":"202605171733"
+    "update":"202605250320"
 }
 
 import os, logging, html, time, hashlib, subprocess, json, httpx
 
 
-mokagi_name = os.environ.get("AD_AgiName")
-agent_name = os.environ.get("AD_MOK_AGENT_NAME")
-
+import mokagi
+mokagi_name = mokagi.MOKAGI_home
+#mokagi_name = mokagi.MOKAGI_home
+#agent_name = mokagi.MOK_AGENT_NAME
 
 
 
@@ -77,14 +84,15 @@ agent_name = os.environ.get("AD_MOK_AGENT_NAME")
 #   str | None: 配置文件路徑或 None。
 # ------------------------------------------------------------------------------------ #
 def get_config_file_path():
-    """返回當前 agent 的配置文件路徑（如 ~/.MokAgi/.溟）"""
-    if not agent_name:
+    """返回當前 agent 的配置文件路徑（如 ~/.mok/.anget）"""
+    # 延遲導入避免循環依賴
+    import mokagi
+    mokagi_home = mokagi.MOKAGI_home  # "mok"
+    agent = mokagi.MOK_AGENT_NAME
+    if not agent:
         return None
-    config_path = os.path.join(os.path.expanduser(f"~/.{mokagi_name}"), f".{agent_name}")
+    config_path = os.path.join(os.path.expanduser(f"~/.{mokagi_home}"), f".{agent}")
     return config_path if os.path.exists(config_path) else None
-
-
-
 
 
 
@@ -145,7 +153,7 @@ def generate_token(chat_id: str, cmd: str, args: str) -> str:
     raw = f"{chat_id}_{cmd}_{args}_{time.time()}_{os.urandom(4).hex()}"
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
-def confirm_command(chat_id: str, token: str) -> tuple:
+async def confirm_command(chat_id: str, token: str) -> tuple:
     """嘗試確認命令，返回 (成功標誌, 結果字串)"""
     if token not in pending_confirmations:
         return False, "❌ 確認碼無效或已過期。請重新發送原命令。"
@@ -166,6 +174,20 @@ def confirm_command(chat_id: str, token: str) -> tuple:
         success, result = execute_pip_install(args)
     elif cmd_type == "shell_exec":
         success, result = execute_shell_command(args)
+
+
+
+    elif cmd_type == "autofix_exec":
+        # 假設我們將 execute_autofix_code 定義在同一個檔案或導入
+        from autofix import execute_code_safely
+        success, out, err = await execute_code_safely(args)
+        if success:
+            result = f"✅ 修正後程式碼執行成功\n輸出：\n{out[:1000]}" if out else "✅ 執行成功（無輸出）"
+            return True, result
+        else:
+            return False, f"❌ 執行修正程式碼時出錯：\n{err[:1000]}"
+
+
     else:
         return False, "❌ 未知命令類型。"
     return success, result
@@ -174,13 +196,9 @@ def confirm_command(chat_id: str, token: str) -> tuple:
 # 從環境變量獲取管理員 ID，用於敏感操作權限檢查
 
 ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "")
-'''
+
 def is_admin(chat_id: str) -> bool:
-    """判斷當前用戶是否為管理員"""
-    return str(chat_id) == ADMIN_CHAT_ID
-'''
-def is_admin(chat_id: str) -> bool:
-    # 網頁版自動放行
+    """判斷當前用戶是否為管理員 網頁版自動放行"""
     if chat_id and not chat_id.isdigit():
         return True
     return str(chat_id) == ADMIN_CHAT_ID
@@ -189,11 +207,23 @@ def is_admin(chat_id: str) -> bool:
 
 
 
-
-
-
-
-
+def request_confirmation(chat_id: str, cmd_type: str, args: str, description: str = "") -> str:
+    """
+    產生一個確認碼並存入 pending_confirmations 字典。
+    返回確認碼 token。
+    cmd_type: 例如 "autofix_exec", "ollama_rm", "pip_install", "shell_exec"
+    args: 執行時需要的參數（例如修正後的程式碼字串）
+    description: 給使用者看的操作說明（可選）
+    """
+    token = generate_token(chat_id, cmd_type, args)
+    pending_confirmations[token] = {
+        "cmd": cmd_type,
+        "args": args,
+        "chat_id": chat_id,
+        "timestamp": time.time(),
+        "description": description
+    }
+    return token
 
 '''
                                                                -.                 -:                
@@ -256,17 +286,25 @@ def is_model_running(model_name: str) -> bool:
 #   str: 模型名稱訊息。
 # ------------------------------------------------------------------------------------ #
 def show_current_model() -> str:
-    """顯示當前正在使用的模型名稱（直接從配置文件讀取）"""
+    """顯示當前激活的模型（優先讀取 MOK_CURRENT_MODEL，否則讀取 MOK_MODEL_NAME）"""
     config_path = get_config_file_path()
     if not config_path:
         return "❌ 無法定位配置文件"
     try:
         with open(config_path, "r") as f:
-            for line in f:
-                if line.startswith("MOK_MODEL_NAME="):
-                    current_model = line.split("=", 1)[1].strip()
-                    return f"🤖 當前使用的模型：{current_model}"
-        return "🤖 當前使用的模型：未設置（將使用默認值 qwen3:1.7b）"
+            lines = f.readlines()
+        current_model = None
+        default_model = None
+        for line in lines:
+            if line.startswith("MOK_CURRENT_MODEL="):
+                current_model = line.split("=", 1)[1].strip()
+            if line.startswith("MOK_MODEL_NAME=") and not line.startswith("MOK_MODEL_NAME2"):  # 只取第一個
+                default_model = line.split("=", 1)[1].strip()
+        model = current_model if current_model else default_model
+        if model:
+            return f"🤖 當前使用的模型：{model}"
+        else:
+            return "🤖 當前使用的模型：未設置（將使用默認值 qwen3:1.7b）"
     except Exception as e:
         return f"❌ 讀取配置失敗: {e}"
 
@@ -286,34 +324,52 @@ def show_current_model() -> str:
 #   str: 操作結果訊息。
 # ------------------------------------------------------------------------------------ #
 def set_model_in_config(new_model: str) -> str:
-    """修改配置文件中的 MOK_MODEL_NAME，返回結果說明"""
+    """修改配置文件中的當前激活模型（MOK_CURRENT_MODEL），不覆蓋 MOK_MODEL_NAME 等預定義模型"""
     config_path = get_config_file_path()
     if not config_path:
         return "❌ 無法定位配置文件。"
+
+    # 先驗證新模型是否存在於配置文件的 MOK_MODEL_NAME* 中
     try:
         with open(config_path, "r") as f:
             lines = f.readlines()
-        new_lines = []
-        found = False
+        # 解析所有 MOK_MODEL_NAME* 的值
+        valid_models = []
         for line in lines:
-            if line.startswith("MOK_MODEL_NAME="):
-                new_lines.append(f"MOK_MODEL_NAME={new_model}\n")
-                found = True
-            else:
-                new_lines.append(line)
-        if not found:
-            new_lines.append(f"MOK_MODEL_NAME={new_model}\n")
+            if line.startswith("MOK_MODEL_NAME"):
+                # 提取模型名稱
+                model_name = line.split("=", 1)[1].strip()
+                valid_models.append(model_name)
+        if new_model not in valid_models:
+            return f"❌ 模型 `{new_model}` 不在配置文件的模型列表中。\n可用的模型: \n" + ",\n".join(valid_models)
+    except Exception as e:
+        return f"❌ 讀取配置失敗: {e}"
+
+    # 寫入 MOK_CURRENT_MODEL
+    new_lines = []
+    found = False
+    for line in lines:
+        if line.startswith("MOK_CURRENT_MODEL="):
+            new_lines.append(f"MOK_CURRENT_MODEL={new_model}\n")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"MOK_CURRENT_MODEL={new_model}\n")
+
+    try:
         with open(config_path, "w") as f:
             f.writelines(new_lines)
-
+    
+        # 重啟 Agent
+        current_agent = mokagi.MOK_AGENT_NAME
         subprocess.Popen(
-            f"(sleep 2 && pm2 restart {mokagi_name}_{agent_name}) &",
+            f"(sleep 2 && pm2 restart mok_agi) &",
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
-        return f"✅ 已將模型設置為 `{new_model}`。\n將在2秒後自動重啟 Agent 使修改生效。"
-
+        return f"✅ 已將當前激活模型設置為 `{new_model}`（配置已保存，2秒後自動重啟生效）。"
     except Exception as e:
         return f"❌ 寫入配置文件失敗: {e}"
 
@@ -510,8 +566,8 @@ async def naturalize_admin_result(user_text: str, raw_result: str, ollama_api: s
     if action == "show_models":
         current = data.get("current_model", "")
         models = data.get("models", [])
-        models_str = "、".join(models) if models else "無"
-        structured = f"當前使用的模型是 {current}。主機上已安裝的模型有：{models_str}。"
+        models_str = "、\n".join(models) if models else "無"
+        structured = f"當前使用的模型是 {current}。\n主機上已安裝的模型有：{models_str}。"
 
     elif action == "set_model":
         model = data.get("model", "")
@@ -559,10 +615,10 @@ async def naturalize_admin_result(user_text: str, raw_result: str, ollama_api: s
         return raw_result   # 無法識別的 action 直接返回原始 JSON
 
     # 讓 LLM 用更自然的語氣說一遍
-    prompt = f"""你是一個管理助手。以下是系統操作結果：
+    prompt = f"""系統操作結果：
 {structured}
 
-請用自然的口語，像跟同事報告一樣，告訴使用者這項操作的結果。可以直接說，不需要開場白。"""
+請用自然口語向用戶報告結果，每段使用 \n 分隔，直接說出結果，不要加開場白。"""
 
     try:
         payload = {
@@ -640,7 +696,7 @@ async def naturalize_admin_result(user_text: str, raw_result: str, ollama_api: s
 # 返回:
 #   str: 執行結果，多為 JSON 字串或普通訊息。
 # ------------------------------------------------------------------------------------ #
-async def handle_admin(args: str, chat_id: str = None) -> str:
+async def handle_admin(args, chat_id: str = None) -> str:
     """
     管理命令路由，根據 args 執行不同操作
     用法示例：
@@ -649,7 +705,14 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
         /admin ollama_rm mok_3b:latest
     """
     logging.info(f"Admin plugin invoked: args='{args}', chat_id={chat_id}")
-    args = args.strip()
+    # 如果是 dict 類型（來自 function calling），轉換 args 為字符串
+    if isinstance(args, dict):
+        # 提取 action 和 args 字段，構建命令行字符串
+        action = args.get("action", "")
+        sub_args = args.get("args", "")
+        args = f"{action} {sub_args}".strip()
+    else:
+        args = args.strip() if args else ""
     if not args:
         help_text = f'''
 {PLUGIN_INFO["icon"]} 管理命令說明：
@@ -663,7 +726,7 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
 
     查看已安裝的模型<pre>/admin mode</pre>
 
-    查看 {mokagi_name}_{agent_name} 日誌 (預設15行)<pre>/admin logs 行數</pre>
+    查看 {mokagi_name}_{mokagi.MOK_AGENT_NAME} 日誌 (預設15行)<pre>/admin logs 行數</pre>
 
     切換模型<pre>/admin set_model 模型名</pre>
 
@@ -685,7 +748,7 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
     if args.startswith("confirm "):
         # 確認命令
         token = args.split(maxsplit=1)[1].strip()
-        success, result = confirm_command(chat_id, token)
+        success, result = await confirm_command(chat_id, token)
         return result
 
 
@@ -780,8 +843,9 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
         if not num:
             num = 15
         try:
+            current_agent = mokagi.MOK_AGENT_NAME
             result = subprocess.run(
-                f"pm2 logs {mokagi_name}_{agent_name} --lines {num} --nostream --raw",
+                f"pm2 logs {mokagi_name}_{current_agent} --lines {num} --nostream --raw",
                 shell=True, capture_output=True, text=True, timeout=30
             )
             if result.stdout:
@@ -808,7 +872,7 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
         # /admin read_file <filepath> [lines]
         parts = args.split()
         if len(parts) < 2:
-            return "用法: /admin read_file [檔案路徑] [行數]\n例：/admin read_file intent.py 20  (讀取前20行)\n若不指定行數，則讀取整個檔案。"
+            return "用法: /admin read_file 檔案路徑 行數\n例：/admin read_file intent.py 20  (讀取前20行)\n若不指定行數，則讀取整個檔案。"
         filepath = parts[1]
         lines = parts[2] if len(parts) > 2 else None
         # 安全限制：只允許讀取當前專案目錄內的文件（可自定義）
@@ -865,9 +929,10 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
     # 返回: 設定結果訊息。
     # -------------------------------------------------------------------------------- #
     if args.startswith("set_model"):
-        new_model = args[10:].strip()
-        if not new_model:
-            return "用法: /admin set_model <模型名稱>\n例：/admin set_model llama3.2:3b"
+        parts = args.split(maxsplit=1)
+        if len(parts) < 2:
+            return "用法: /admin set_model 模型名稱\n例：/admin set_model llama3.2:3b"
+        new_model = parts[1].strip()
         return set_model_in_config(new_model)
 
 
@@ -904,7 +969,7 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
         if rest.startswith("install"):
             rest = rest[len("install"):].strip()
         if not rest:
-            return "用法: /admin pip install <包名>\n例：/admin pip install requests"
+            return "用法: /admin pip install 包名\n例：/admin pip install requests"
         # 生成確認碼
         token = generate_token(chat_id, "pip_install", rest)
         pending_confirmations[token] = {
@@ -928,7 +993,7 @@ async def handle_admin(args: str, chat_id: str = None) -> str:
     if args.startswith("exec"):
         rest = args[len("exec"):].strip()
         if not rest:
-            return "用法: /admin exec <Shell 命令>\n例如：/admin exec curl -fsSL https://get.docker.com | sh"
+            return "用法: /admin exec Shell命令\n例如：/admin exec curl -fsSL https://get.docker.com | sh"
         token = generate_token(chat_id, "shell_exec", rest)
         pending_confirmations[token] = {
             "cmd": "shell_exec",

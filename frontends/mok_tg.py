@@ -2,7 +2,7 @@
 mok_tg.py
 Telegram 適配器 - 支持流式輸出（實時顯示思考過程）
 核心對話能力由 mokagi 提供。
-202605171733
+202605250320
 """
 
 import asyncio
@@ -140,26 +140,27 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def tools_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from mokagi import tool_handler
     tools = tool_handler.get_tools()
-    text = "🧰 **已安裝的工具:**\n"
+    text = "🧰 已安裝的工具:\n"
     for mod in tools.values():
         if hasattr(mod, "PLUGIN_INFO"):
             info = mod.PLUGIN_INFO
             text += f"  {info['command']} — {info['description']}\n"
-    text += "\n ➕ [增加工具](https://github.com/64071181/MokAgi/tree/main/tools)"
-    await update.message.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
+    text += "\n ➕ 增加工具: https://github.com/64071181/MokAgi/tree/main/tools"
+    await update.message.reply_text(text, disable_web_page_preview=True)
 
 async def reload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reload_tools()
-    await update_bot_commands(context.application)
-    await update.message.reply_text("✅ 工具已重新加載。")
+    await update.message.reply_text("🔄 立即停止所有服務及緊急重啟，請稍候...")
+    import subprocess
+    subprocess.Popen("pm2 restart mok_agi", shell=True)
+    # 注意：重启后当前进程会被杀死，无法回复后续消息。所以先回复再重启。
 
 async def update_bot_commands(app):
     from mokagi import tool_handler
     base_commands = [
         BotCommand(sanitize("start"), sanitize("開始對話")),
         BotCommand(sanitize("clear"), sanitize("清除會話記憶")),
+        BotCommand(sanitize("reload"), sanitize("緊急重啟")),
         BotCommand(sanitize("tools"), sanitize("工具箱")),
-        BotCommand(sanitize("reload"), sanitize("重新加載工具")),
     ]
     plugin_commands = []
     for mod in tool_handler.get_tools().values():
@@ -190,7 +191,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ---------- 直接處理以 '/' 開頭的命令 ----------
     if user_text.startswith('/'):
-        print(f"收到 / 命令: {user_text}")
+        #print2(f"收到 / 命令: {user_text}")
         # 導入 tool_handler（已在 mokagi 中導入，這裡直接引用）
         from mokagi import tool_handler
         # 調用統一的命令處理函數（非流式）
@@ -202,6 +203,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cmd_map=tool_handler.get_cmd_map(),
             tools=tool_handler.get_tools()
         )
+        #print2(f"tool_handler.process_message 返回: {result}")
         if result:
             # 如果命令被處理，直接發送結果並返回
             await update.message.reply_text(result, parse_mode='HTML')
@@ -211,7 +213,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 特殊處理：工作流自動執行標記（由 workflow 工具返回）
     if user_text.startswith("WORKFLOW_AUTO_EXEC:"):
-        print(f"收到 工作流: {user_text}")
+        #print2(f"收到 工作流: {user_text}")
         parts = user_text.split(":", 3)
         if len(parts) >= 4:
             goal = parts[3].split(":", 1)[0] if ":" in parts[3] else parts[3]
@@ -243,15 +245,17 @@ def main():
     app = ApplicationBuilder().token(MOK_TG_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clear", clear))
-    app.add_handler(CommandHandler("tools", tools_command))
     app.add_handler(CommandHandler("reload", reload))
+    app.add_handler(CommandHandler("tools", tools_command))
+    
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
+    
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(update_bot_commands(app))
     loop.run_until_complete(send_welcome(app))
 
-    print(f"✅ {MOK_AGENT_NAME} 啟動中... （流式輸出已啟用）")
+    #print2(f"✅ {MOK_AGENT_NAME} 啟動中... （流式輸出已啟用）")
     app.run_polling()
 
 if __name__ == "__main__":

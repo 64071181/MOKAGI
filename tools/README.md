@@ -1,4 +1,4 @@
-# "updata":"202605171733"
+# "update":"202605250320"
 
 # 自製工具
 
@@ -17,15 +17,20 @@
 ## eaxmplo.py
 
     PLUGIN_INFO = {
-        "command": "/eaxmplo",
-        "icon":"😘",
-        "description": "範本 (tool1, tool2)",
-        "handler": "handle_eaxmplo",
-        "intent_keywords": [
-            ("範本1", "/tool1"),
-            ("範本2", "/tool2"),
+        "command": "/mycommand",            # Telegram 命令
+        "icon": "🔧",                       # 圖示
+        "handler": "handle_mycommand",      # 異步處理函數名
+        "description": "工具描述",
+        "intent_keywords": [                # 自然語言觸發詞
+            ("關鍵詞", "/mycommand subcmd")
         ],
-        "updata":"202604272310"
+        "tool_schema": {                    # 供 LLM 自動調用的 JSON Schema
+            "name": "my_tool",
+            "description": "...",
+            "parameters": {...}
+        },
+        "update":"202604272310"
+        "naturalize_func": "naturalize_result"  # 可選：結果自然化函數
     }
 
     # ================== python code ===================
@@ -33,7 +38,7 @@
     # if need pip install
     try:
         import chromadb
-        print("chromadb 已安装，版本：", chromadb.__version__)
+        print("chromadb 已安裝，版本：", chromadb.__version__)
     except ImportError:
         msg = (
                     "❌ need pip install：`chromadb`、`sentence-transformers`\n\n"
